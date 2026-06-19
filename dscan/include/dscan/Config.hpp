@@ -16,10 +16,13 @@ struct Config {
     bool followLinks = false;
     bool permanent   = false;           // bypass Recycle Bin
     bool assumeYes   = false;           // non-interactive confirm
+    bool forceSystem = false;           // allow deletion in protected trees
+    bool noProgress  = false;           // disable animated progress line
     DeleteMode deleteMode = DeleteMode::Interactive;
     OutputFormat format = OutputFormat::Text;
     std::wstring reportPath;            // optional output file
     std::wstring manifestPath;          // for manifest method / --write-manifest
+    std::wstring auditLogPath;          // append-only deletion log
     bool writeManifest = false;
     unsigned threads = 0;               // 0 => auto
     uint64_t mmapThreshold = 16ull << 20;

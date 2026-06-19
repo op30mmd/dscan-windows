@@ -7,6 +7,7 @@
 #include "dscan/detectors/ZipDetector.hpp"
 #include "dscan/detectors/JpegDetector.hpp"
 #include "dscan/detectors/PdfDetector.hpp"
+#include "dscan/detectors/MediaDetectors.hpp"
 #include "dscan/detectors/ManifestDetector.hpp"
 #include "dscan/detectors/EntropyDetector.hpp"
 #include <algorithm>
@@ -31,6 +32,10 @@ std::vector<std::unique_ptr<IDetector>> build_pipeline(const Config& cfg) {
         pipeline.push_back(std::make_unique<ZipDetector>());
         pipeline.push_back(std::make_unique<JpegDetector>());
         pipeline.push_back(std::make_unique<PdfDetector>());
+        pipeline.push_back(std::make_unique<Mp4Detector>());
+        pipeline.push_back(std::make_unique<MkvDetector>());
+        pipeline.push_back(std::make_unique<FlacDetector>());
+        pipeline.push_back(std::make_unique<SqliteDetector>());
     }
     if (cfg.methods.count("manifest")) {
         pipeline.push_back(std::make_unique<ManifestDetector>());

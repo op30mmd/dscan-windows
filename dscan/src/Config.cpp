@@ -5,9 +5,10 @@
 namespace dscan {
 
 void print_usage() {
-    std::wcout << L"dscan [root] [options]\n\n"
+    std::wcout << L"Disk Corruption Scanner (dscan)\n\n"
+               << L"Usage: dscan [root] [options]\n\n"
                << L"Positional:\n"
-               << L"  root                  Drive or folder to scan (default: C\\). e.g. dscan D\\\n\n"
+               << L"  root                  Drive or folder to scan (default: C:\\). e.g. dscan D:\\\n\n"
                << L"Detection methods (default: size,magic,io,struct):\n"
                << L"  --methods <list>      Comma list: size,magic,io,struct,manifest,entropy\n"
                << L"  --all-checks          Run every applicable method (no short-circuit)\n"
@@ -15,20 +16,26 @@ void print_usage() {
                << L"Manifest / bit-rot:\n"
                << L"  --write-manifest <f>  Record hashes to <f> for a future baseline\n"
                << L"  --manifest <f>        Compare against baseline <f> to detect silent bit-rot\n\n"
-               << L"Deletion:\n"
+               << L"Deletion & Safety:\n"
                << L"  (default)             Interactive multi-select review\n"
                << L"  --delete-all          Select all corrupted files for deletion\n"
                << L"  --report-only         List findings, never delete\n"
                << L"  --permanent           Bypass Recycle Bin (hard delete)\n"
-               << L"  --yes                 Skip the confirmation prompt\n\n"
+               << L"  --yes                 Skip the confirmation prompt\n"
+               << L"  --force-system        Allow deletion in protected trees (C:\\Windows, etc.)\n"
+               << L"  --audit-log <f>       Path to append-only deletion log\n\n"
                << L"Performance / scope:\n"
                << L"  --threads <n>         Worker threads (default: auto)\n"
                << L"  --follow-links        Follow symlinks/junctions (default: skip)\n"
                << L"  --max-size <bytes>    Skip files larger than this\n\n"
-               << L"Output:\n"
-               << L"  --report <file>       Write findings\n"
+               << L"Output & UI:\n"
+               << L"  --report <f>          Write findings to file\n"
                << L"  --format <fmt>        text | json | csv (default: text)\n"
-               << L"  --help                Show help\n";
+               << L"  --no-progress         Disable animated progress line\n"
+               << L"  --version             Show version\n"
+               << L"  -h, --help            Show help\n\n"
+               << L"Example:\n"
+               << L"  dscan D:\\ --methods magic,struct --report findings.json --format json\n";
 }
 
 Config parse_args(int argc, wchar_t** argv) {
@@ -37,8 +44,11 @@ Config parse_args(int argc, wchar_t** argv) {
 
     for (int i = 1; i < argc; ++i) {
         std::wstring arg = argv[i];
-        if (arg == L"--help") {
+        if (arg == L"--help" || arg == L"-h" || arg == L"help") {
             print_usage();
+            exit(0);
+        } else if (arg == L"--version") {
+            std::wcout << L"dscan v1.0.0\n";
             exit(0);
         } else if (arg == L"--methods" && i + 1 < argc) {
             cfg.methods.clear();
@@ -73,6 +83,12 @@ Config parse_args(int argc, wchar_t** argv) {
             cfg.permanent = true;
         } else if (arg == L"--yes") {
             cfg.assumeYes = true;
+        } else if (arg == L"--force-system") {
+            cfg.forceSystem = true;
+        } else if (arg == L"--audit-log" && i + 1 < argc) {
+            cfg.auditLogPath = argv[++i];
+        } else if (arg == L"--no-progress") {
+            cfg.noProgress = true;
         } else if (arg == L"--threads" && i + 1 < argc) {
             cfg.threads = (unsigned)std::wcstoul(argv[++i], nullptr, 10);
         } else if (arg == L"--follow-links") {
