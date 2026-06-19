@@ -42,9 +42,9 @@ static uint32_t crc32c_sw(uint32_t crc, const uint8_t* p, size_t n) {
 }
 
 uint32_t crc32c(uint32_t crc, const void* data, size_t len) {
-    static const bool hw = sse42_supported();
     const uint8_t* p = static_cast<const uint8_t*>(data);
 #if defined(_MSC_VER) || defined(__GNUC__) || defined(__clang__)
+    static const bool hw = sse42_supported();
     if (hw) {
         uint32_t c = ~crc;
 #if defined(__x86_64__) || defined(_M_X64)
