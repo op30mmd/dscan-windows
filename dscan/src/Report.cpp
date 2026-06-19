@@ -11,7 +11,12 @@ static std::wstring to_wstring(const std::string& s) {
 void write_report(const std::vector<Finding>& findings, const Config& cfg) {
     if (cfg.reportPath.empty()) return;
 
+#ifdef _WIN32
     std::wofstream out(cfg.reportPath.c_str());
+#else
+    std::string path(cfg.reportPath.begin(), cfg.reportPath.end());
+    std::wofstream out(path.c_str());
+#endif
     if (!out) {
         std::wcerr << L"Failed to open report file: " << cfg.reportPath << std::endl;
         return;

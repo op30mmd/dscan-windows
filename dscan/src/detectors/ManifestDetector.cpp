@@ -1,6 +1,8 @@
 #include "dscan/detectors/ManifestDetector.hpp"
 #include "dscan/detectors/IoHashDetector.hpp"
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include <map>
 #include <fstream>
 #include <sstream>
@@ -12,7 +14,12 @@ static std::map<std::wstring, ManifestEntry> g_manifest;
 static bool g_manifestLoaded = false;
 
 void load_manifest(const std::wstring& path) {
+#ifdef _WIN32
     std::wifstream in(path.c_str());
+#else
+    std::string sPath(path.begin(), path.end());
+    std::wifstream in(sPath);
+#endif
     if (!in) return;
     std::wstring line;
     while (std::getline(in, line)) {
@@ -39,7 +46,12 @@ void load_manifest(const std::wstring& path) {
 }
 
 void save_manifest(const std::wstring& path, const std::vector<std::pair<std::wstring, ManifestEntry>>& entries) {
+#ifdef _WIN32
     std::wofstream out(path.c_str());
+#else
+    std::string sPath(path.begin(), path.end());
+    std::wofstream out(sPath);
+#endif
     if (!out) return;
     for (const auto& pair : entries) {
         out << pair.first << L"\t"
@@ -73,11 +85,15 @@ DetectionResult ManifestDetector::check(const FileContext& f, const Config& /*cf
     auto it = g_manifest.find(f.path);
     if (it == g_manifest.end()) return { Verdict::Skipped, "not in manifest", "manifest" };
 
+#ifdef _WIN32
     WIN32_FILE_ATTRIBUTE_DATA attr;
     if (!GetFileAttributesExW(f.path.c_str(), GetFileExInfoStandard, &attr))
         return { Verdict::Unreadable, "failed to get mtime", "manifest" };
 
     uint64_t currentMtime = (uint64_t(attr.ftLastWriteTime.dwHighDateTime) << 32) | attr.ftLastWriteTime.dwLowDateTime;
+#else
+    uint64_t currentMtime = 0;
+#endif
 
     bool hashMatch = (f.hash.low64 == it->second.hash.low64 && f.hash.high64 == it->second.hash.high64);
 

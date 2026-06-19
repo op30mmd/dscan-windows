@@ -6,11 +6,19 @@
 namespace dscan {
 
 DetectionResult PngDetector::check(const FileContext& f, const Config&) {
-    MappedFile mf(f.path);
-    if (!mf.ok()) return { Verdict::Unreadable, "open error " + std::to_string(mf.error()), "struct/png" };
+    const uint8_t* p = nullptr;
+    uint64_t n = 0;
+    std::unique_ptr<MappedFile> mf;
 
-    const uint8_t* p = mf.data();
-    uint64_t n = mf.size();
+    if (f.bufferLoaded && !f.isStreaming) {
+        p = f.buffer.data();
+        n = f.buffer.size();
+    } else {
+        mf = std::make_unique<MappedFile>(f.path);
+        if (!mf->ok()) return { Verdict::Unreadable, "open error " + std::to_string(mf->error()), "struct/png" };
+        p = mf->data();
+        n = mf->size();
+    }
 
     static const uint8_t SIG[8] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
     if (n < 8 || std::memcmp(p, SIG, 8) != 0)

@@ -7,6 +7,8 @@
 namespace dscan {
 
 DetectionResult IoHashDetector::check(const FileContext& f, const Config& cfg) {
+    if (f.hashValid) return { Verdict::Ok, "", "io" };
+    if (f.isPartial) return { Verdict::Skipped, "full hash not available in partial pass", "io" };
     FileContext& fc = const_cast<FileContext&>(f);
     XXH3_state_t* st = XXH3_createState();
     XXH3_128bits_reset(st);
@@ -15,14 +17,25 @@ DetectionResult IoHashDetector::check(const FileContext& f, const Config& cfg) {
     std::array<uint64_t, 256> counts{};
     uint64_t total = 0;
 
-    IoError e = stream_file(f.path, 1u << 20, [&](std::span<const uint8_t> blk) {
+    IoError e{};
+    if (f.bufferLoaded && !f.buffer.empty() && !f.isStreaming) {
+        std::span<const uint8_t> blk(f.buffer.data(), f.buffer.size());
         crc = crc32c(crc, blk.data(), blk.size());
         XXH3_128bits_update(st, blk.data(), blk.size());
         if (cfg.methods.count("entropy")) {
             for (uint8_t b : blk) counts[b]++;
             total += blk.size();
         }
-    });
+    } else {
+        e = stream_file(f.path, 1u << 20, [&](std::span<const uint8_t> blk) {
+            crc = crc32c(crc, blk.data(), blk.size());
+            XXH3_128bits_update(st, blk.data(), blk.size());
+            if (cfg.methods.count("entropy")) {
+                for (uint8_t b : blk) counts[b]++;
+                total += blk.size();
+            }
+        });
+    }
 
     XXH128_hash_t h = XXH3_128bits_digest(st);
     XXH3_freeState(st);

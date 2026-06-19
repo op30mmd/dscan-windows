@@ -13,6 +13,18 @@ struct FileContext {
     uint64_t size = 0;
     std::string extLower;       // ".png" etc.
 
+    uint64_t fileRef = 0;       // MFT reference number
+    uint64_t startLcn = 0;      // Logical Cluster Number
+    uint32_t diskNumber = 0;
+
+    // For reader-worker split
+    std::vector<uint8_t> buffer;       // Whole file if small, or first chunk if large
+    std::vector<uint8_t> footer;       // Last few KB of file
+    bool bufferLoaded = false;
+    bool footerLoaded = false;
+    bool isStreaming = false;
+    bool isPartial = false;            // Only header/footer were read
+
     // Shared results for single-pass read
     bool hashValid = false;
     XXH128_hash_t hash;
