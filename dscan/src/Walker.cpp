@@ -78,9 +78,10 @@ static bool enumerate_mft(const std::wstring& root, const Config& cfg, const std
         if (hFile != INVALID_HANDLE_VALUE) {
             FILE_STANDARD_INFO stdInfo; if (GetFileInformationByHandleEx(hFile, FileStandardInfo, &stdInfo, sizeof(stdInfo))) { fc.size = stdInfo.EndOfFile.QuadPart; }
             if (cfg.physicalOrder) {
-                STARTING_VCN_INPUT_BUFFER vcnInput = {0}; struct { RETRIEVAL_POINTERS_BUFFER header; EXTENT extents[1]; } outBuf; DWORD outBytes;
+                STARTING_VCN_INPUT_BUFFER vcnInput = {0};
+                RETRIEVAL_POINTERS_BUFFER outBuf; DWORD outBytes;
                 if (DeviceIoControl(hFile, FSCTL_GET_RETRIEVAL_POINTERS, &vcnInput, sizeof(vcnInput), &outBuf, sizeof(outBuf), &outBytes, nullptr) || GetLastError() == ERROR_MORE_DATA) {
-                    if (outBuf.header.ExtentCount > 0) { fc.startLcn = outBuf.header.Extents[0].Lcn.QuadPart; }
+                    if (outBuf.ExtentCount > 0) { fc.startLcn = outBuf.Extents[0].Lcn.QuadPart; }
                 }
             }
             CloseHandle(hFile);
