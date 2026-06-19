@@ -1,0 +1,32 @@
+#pragma once
+#include <cstdint>
+#include <string>
+#include <set>
+
+namespace dscan {
+
+enum class DeleteMode { None, Interactive, All };
+enum class OutputFormat { Text, Json, Csv };
+
+struct Config {
+    std::wstring root = L"C:\\";       // scan root
+    std::set<std::string> methods{ "size", "magic", "io", "struct" };
+    bool allChecks   = false;           // do not short-circuit
+    bool includeSuspect = false;        // allow SUSPECT to be deletable
+    bool followLinks = false;
+    bool permanent   = false;           // bypass Recycle Bin
+    bool assumeYes   = false;           // non-interactive confirm
+    DeleteMode deleteMode = DeleteMode::Interactive;
+    OutputFormat format = OutputFormat::Text;
+    std::wstring reportPath;            // optional output file
+    std::wstring manifestPath;          // for manifest method / --write-manifest
+    bool writeManifest = false;
+    unsigned threads = 0;               // 0 => auto
+    uint64_t mmapThreshold = 16ull << 20;
+    uint64_t maxFileBytes = 0;          // 0 => no cap
+};
+
+Config parse_args(int argc, wchar_t** argv);
+void print_usage();
+
+} // namespace dscan
