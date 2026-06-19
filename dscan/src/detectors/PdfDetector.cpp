@@ -38,8 +38,12 @@ DetectionResult PdfDetector::check(const FileContext& f, const Config&) {
             const uint8_t* valPtr = tail + i + 9;
             while (valPtr < p + n && (*valPtr == ' ' || *valPtr == '\r' || *valPtr == '\n')) valPtr++;
             if (valPtr < p + n && *valPtr >= '0' && *valPtr <= '9') {
-                char* endptr = nullptr;
-                long long xrefOff = std::strtoll((const char*)valPtr, &endptr, 10);
+                // Ensure we don't read out of bounds with strtoll
+                std::string valStr;
+                while (valPtr < p + n && *valPtr >= '0' && *valPtr <= '9' && valStr.size() < 20) {
+                    valStr += (char)*valPtr++;
+                }
+                long long xrefOff = std::atoll(valStr.c_str());
                 if (xrefOff > 0 && (uint64_t)xrefOff < n) {
                     // Check if 'xref' or an object exists at that offset
                     const uint8_t* target = p + xrefOff;
