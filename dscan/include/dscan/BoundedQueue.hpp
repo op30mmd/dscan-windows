@@ -50,7 +50,7 @@ private:
     size_t cap_;
     bool closed_ = false;
     std::queue<T> q_;
-    std::mutex m_;
+    mutable std::mutex m_;
     std::condition_variable notEmpty_, notFull_;
 };
 
