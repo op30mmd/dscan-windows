@@ -31,7 +31,7 @@ void walk(const std::wstring& root, const Config& cfg,
 
     // Default exclusions (drive-agnostic)
     static const std::vector<std::wstring> excludedDirNames = {
-        L"Windows", L"$Recycle.Bin", L"System Volume Information"
+        L"Windows", L"$Recycle.Bin", L"System Volume Information", L"Program Files", L"Program Files (x86)"
     };
     static const std::vector<std::wstring> excludedFiles = {
         L"pagefile.sys", L"hiberfil.sys", L"swapfile.sys"

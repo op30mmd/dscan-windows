@@ -46,12 +46,19 @@ DetectionResult JpegDetector::check(const FileContext& f, const Config&) {
 
              if (marker == 0xDA) { // SOS (Start of Scan)
                  // After SOS, it's entropy coded data until next marker.
-                 // Finding the next marker requires partial decoding or scanning for 0xFF (!0x00).
                  off += 2 + len;
-                 // For now, scan for EOI
+                 // Scan for next marker
+                 bool foundNext = false;
                  while (off + 2 <= n) {
-                     if (p[off] == 0xFF && p[off+1] != 0x00) break;
+                     if (p[off] == 0xFF && p[off+1] != 0x00) {
+                         foundNext = true;
+                         break;
+                     }
                      off++;
+                 }
+                 if (!foundNext) {
+                     // If SOS is the last major thing, we expect EOI to be found by the outer loop or this scan.
+                     // Truncated scans often end abruptly without EOI.
                  }
                  continue;
              }

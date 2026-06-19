@@ -63,6 +63,17 @@ DetectionResult PdfDetector::check(const FileContext& f, const Config&) {
     if (!sawStartXref)
         return { Verdict::Corrupt, "missing startxref (corrupt trailer)", "struct/pdf" };
 
+    // Basic trailer check: should find 'trailer' or 'obj' before startxref
+    bool sawTrailer = false;
+    for (uint64_t i = 0; i <= lookback - 7; i++) {
+        if (std::memcmp(tail + i, "trailer", 7) == 0 || std::memcmp(tail + i, "obj", 3) == 0) {
+            sawTrailer = true;
+            break;
+        }
+    }
+    if (!sawTrailer)
+         return { Verdict::Corrupt, "missing trailer or obj in footer", "struct/pdf" };
+
     return { Verdict::Ok, "header, %%EOF and startxref valid", "struct/pdf" };
 }
 
