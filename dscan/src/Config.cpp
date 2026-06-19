@@ -27,7 +27,15 @@ void print_usage() {
                << L"Performance / scope:\n"
                << L"  --threads <n>         Worker threads (default: auto)\n"
                << L"  --follow-links        Follow symlinks/junctions (default: skip)\n"
-               << L"  --max-size <bytes>    Skip files larger than this\n\n"
+               << L"  --max-size <bytes>    Skip files larger than this\n"
+               << L"  --disk-profile <p>    auto|hdd|ssd|network (default: auto)\n"
+               << L"  --readers <n>         Reader threads per spindle (default: auto)\n"
+               << L"  --physical-order      Sort by LCN instead of MFT ref\n"
+               << L"  --mft-enum <on|off>   Bulk MFT/USN enumeration (default: on)\n"
+               << L"  --hdd-block-size <n>  Read block size in bytes (default: 4MB)\n"
+               << L"  --no-cache            Bypass system cache (FILE_FLAG_NO_BUFFERING)\n"
+               << L"  --header-first        Two-phase: header/footer pass first\n"
+               << L"  --scan-cache <f>      Skip unchanged files via cache <f>\n\n"
                << L"Output & UI:\n"
                << L"  --report <f>          Write findings to file\n"
                << L"  --format <fmt>        text | json | csv (default: text)\n"
@@ -95,6 +103,27 @@ Config parse_args(int argc, wchar_t** argv) {
             cfg.followLinks = true;
         } else if (arg == L"--max-size" && i + 1 < argc) {
             cfg.maxFileBytes = std::wcstoull(argv[++i], nullptr, 10);
+        } else if (arg == L"--disk-profile" && i + 1 < argc) {
+            std::wstring p = argv[++i];
+            if (p == L"hdd") cfg.diskProfile = DiskProfile::Hdd;
+            else if (p == L"ssd") cfg.diskProfile = DiskProfile::Ssd;
+            else if (p == L"network") cfg.diskProfile = DiskProfile::Network;
+            else cfg.diskProfile = DiskProfile::Auto;
+        } else if (arg == L"--readers" && i + 1 < argc) {
+            cfg.readers = (unsigned)std::wcstoul(argv[++i], nullptr, 10);
+        } else if (arg == L"--physical-order") {
+            cfg.physicalOrder = true;
+        } else if (arg == L"--mft-enum" && i + 1 < argc) {
+            std::wstring val = argv[++i];
+            cfg.mftEnum = (val != L"off");
+        } else if (arg == L"--hdd-block-size" && i + 1 < argc) {
+            cfg.hddBlockSize = (uint32_t)std::wcstoul(argv[++i], nullptr, 10);
+        } else if (arg == L"--no-cache") {
+            cfg.noCache = true;
+        } else if (arg == L"--header-first") {
+            cfg.headerFirst = true;
+        } else if (arg == L"--scan-cache" && i + 1 < argc) {
+            cfg.scanCachePath = argv[++i];
         } else if (arg == L"--report" && i + 1 < argc) {
             cfg.reportPath = argv[++i];
         } else if (arg == L"--format" && i + 1 < argc) {

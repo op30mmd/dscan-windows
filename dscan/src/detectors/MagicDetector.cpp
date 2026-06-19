@@ -20,20 +20,46 @@ DetectionResult MagicDetector::check(const FileContext& f, const Config&) {
     auto it = kSigs.find(f.extLower);
     if (it == kSigs.end()) return { Verdict::Skipped, "no signature for type", "magic" };
 
-    MappedFile mf(f.path);
-    if (!mf.ok()) return { Verdict::Unreadable, "open error " + std::to_string(mf.error()), "magic" };
+    const uint8_t* data = nullptr;
+    uint64_t size = 0;
+
+    std::unique_ptr<MappedFile> mf;
+    if (f.bufferLoaded && !f.buffer.empty()) {
+        data = f.buffer.data();
+        size = f.buffer.size();
+    } else {
+        mf = std::make_unique<MappedFile>(f.path);
+        if (!mf->ok()) return { Verdict::Unreadable, "open error " + std::to_string(mf->error()), "magic" };
+        data = mf->data();
+        size = mf->size();
+    }
 
     const auto& s = it->second;
-    if (mf.size() < s.head.size())
+    if (size < s.head.size())
         return { Verdict::Corrupt, "too small for header", "magic" };
 
-    if (!std::equal(s.head.begin(), s.head.end(), mf.data()))
+    if (!std::equal(s.head.begin(), s.head.end(), data))
         return { Verdict::Suspect, "header/extension mismatch", "magic" };
 
     if (!s.tail.empty()) {
-        if (mf.size() < s.tail.size() ||
-            !std::equal(s.tail.begin(), s.tail.end(), mf.data() + mf.size() - s.tail.size()))
-            return { Verdict::Corrupt, "missing/!= expected trailer", "magic" };
+        const uint8_t* footerData = nullptr;
+        if (f.footerLoaded && f.footer.size() >= s.tail.size()) {
+            footerData = f.footer.data() + f.footer.size() - s.tail.size();
+        } else if (!f.isStreaming && size >= s.tail.size()) {
+            footerData = data + size - s.tail.size();
+        }
+
+        if (footerData) {
+            if (!std::equal(s.tail.begin(), s.tail.end(), footerData))
+                return { Verdict::Corrupt, "missing/!= expected trailer", "magic" };
+        } else {
+            if (f.isStreaming) {
+                // If we are here, it means the reader/worker didn't provide a footer even though it was streaming.
+                // This shouldn't happen with the new worker logic.
+                return { Verdict::Unreadable, "footer data missing in streaming mode", "magic" };
+            }
+            return { Verdict::Corrupt, "too small for trailer", "magic" };
+        }
     }
 
     return { Verdict::Ok, "", "magic" };

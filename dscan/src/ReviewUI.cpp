@@ -1,9 +1,11 @@
 #include "dscan/ReviewUI.hpp"
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#endif
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -11,7 +13,9 @@
 #include <fstream>
 #include <iomanip>
 #include <chrono>
+#ifdef _WIN32
 #include <io.h>
+#endif
 
 namespace dscan {
 
@@ -23,6 +27,7 @@ static bool use_color() {
     static bool checked = false;
     static bool color = false;
     if (!checked) {
+#ifdef _WIN32
         char* noColor = nullptr;
         size_t len = 0;
         _dupenv_s(&noColor, &len, "NO_COLOR");
@@ -32,6 +37,9 @@ static bool use_color() {
         } else {
             color = _isatty(_fileno(stdout)) != 0;
         }
+#else
+        color = false;
+#endif
         checked = true;
     }
     return color;
@@ -40,6 +48,7 @@ static bool use_color() {
 enum Color { RESET, RED, GREEN, YELLOW, CYAN, BOLD };
 static void set_color(Color c) {
     if (!use_color()) return;
+#ifdef _WIN32
     HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     switch (c) {
         case RESET:  SetConsoleTextAttribute(h, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE); break;
@@ -49,6 +58,9 @@ static void set_color(Color c) {
         case CYAN:   SetConsoleTextAttribute(h, FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY); break;
         case BOLD:   SetConsoleTextAttribute(h, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY); break;
     }
+#else
+    (void)c;
+#endif
 }
 
 static std::wstring verdict_to_string(Verdict v) {
@@ -74,12 +86,21 @@ static void print_verdict_tag(Verdict v) {
 
 static void log_deletion(const Config& cfg, const Finding& f, bool permanent, bool success) {
     if (cfg.auditLogPath.empty()) return;
+#ifdef _WIN32
     std::wofstream log(cfg.auditLogPath, std::ios::app);
+#else
+    std::string path(cfg.auditLogPath.begin(), cfg.auditLogPath.end());
+    std::wofstream log(path.c_str(), std::ios::app);
+#endif
     if (!log) return;
 
     auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm timeinfo;
+#ifdef _WIN32
     localtime_s(&timeinfo, &now);
+#else
+    timeinfo = *localtime(&now);
+#endif
 
     log << std::put_time(&timeinfo, L"%Y-%m-%d %H:%M:%S") << L" | "
         << (success ? L"SUCCESS" : L"FAILURE") << L" | "
@@ -96,6 +117,7 @@ static void log_deletion(const Config& cfg, const Finding& f, bool permanent, bo
 }
 
 static bool is_protected_path(const std::wstring& path) {
+#ifdef _WIN32
     static const std::vector<std::wstring> protectedPrefixes = {
         L"\\\\?\\C:\\Windows", L"\\\\?\\C:\\Program Files", L"\\\\?\\C:\\Program Files (x86)",
         L"\\\\?\\C:\\$Recycle.Bin", L"\\\\?\\C:\\System Volume Information"
@@ -103,6 +125,9 @@ static bool is_protected_path(const std::wstring& path) {
     for (const auto& pre : protectedPrefixes) {
         if (_wcsnicmp(path.c_str(), pre.c_str(), pre.size()) == 0) return true;
     }
+#else
+    (void)path;
+#endif
     return false;
 }
 
@@ -112,6 +137,7 @@ static bool recycle_or_delete(const std::vector<Finding*>& selected, const Confi
     bool allOk = true;
     for (auto* f : selected) {
         bool success = false;
+#ifdef _WIN32
         if (cfg.permanent) {
             success = DeleteFileW(f->path.c_str());
         } else {
@@ -124,6 +150,7 @@ static bool recycle_or_delete(const std::vector<Finding*>& selected, const Confi
             op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
             success = (SHFileOperationW(&op) == 0 && !op.fAnyOperationsAborted);
         }
+#endif
         log_deletion(cfg, *f, cfg.permanent, success);
         if (!success) allOk = false;
     }
@@ -242,11 +269,13 @@ void review_and_delete(std::vector<Finding>& findings, const Config& cfg) {
                     int idx = std::stoi(line.substr(2));
                     if (idx > 0 && idx <= (int)shown.size()) {
                         std::wstring path = shown[idx - 1]->path;
+#ifdef _WIN32
                         size_t lastSlash = path.find_last_of(L'\\');
                         if (lastSlash != std::wstring::npos) {
                             std::wstring dir = path.substr(0, lastSlash);
                             ShellExecuteW(NULL, L"explore", dir.c_str(), NULL, NULL, SW_SHOWNORMAL);
                         }
+#endif
                     }
                 } catch (...) {}
             } else {

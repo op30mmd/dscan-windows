@@ -7,6 +7,7 @@ namespace dscan {
 
 enum class DeleteMode { None, Interactive, All };
 enum class OutputFormat { Text, Json, Csv };
+enum class DiskProfile { Auto, Hdd, Ssd, Network };
 
 struct Config {
     std::wstring root = L"C:\\";       // scan root
@@ -27,6 +28,16 @@ struct Config {
     unsigned threads = 0;               // 0 => auto
     uint64_t mmapThreshold = 16ull << 20;
     uint64_t maxFileBytes = 0;          // 0 => no cap
+
+    // HDD optimizations
+    DiskProfile diskProfile = DiskProfile::Auto;
+    unsigned readers = 0;               // per spindle, 0 => auto
+    bool physicalOrder = false;         // use FSCTL retrieval pointers (LCN)
+    bool mftEnum = true;                // bulk MFT/USN enumeration
+    uint32_t hddBlockSize = 4 << 20;    // 4 MiB
+    bool noCache = false;               // FILE_FLAG_NO_BUFFERING
+    bool headerFirst = false;           // two-phase scan
+    std::wstring scanCachePath;         // skip unchanged files
 };
 
 Config parse_args(int argc, wchar_t** argv);

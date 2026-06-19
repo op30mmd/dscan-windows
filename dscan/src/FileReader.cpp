@@ -1,14 +1,17 @@
 #include "dscan/FileReader.hpp"
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#endif
 #include <vector>
 
 namespace dscan {
 
 IoError stream_file(const std::wstring& path, size_t blockSize,
                     const std::function<void(std::span<const uint8_t>)>& sink) {
+#ifdef _WIN32
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING,
@@ -29,9 +32,14 @@ IoError stream_file(const std::wstring& path, size_t blockSize,
     }
     CloseHandle(h);
     return err;
+#else
+    (void)path; (void)blockSize; (void)sink;
+    return { true, 0 };
+#endif
 }
 
 MappedFile::MappedFile(const std::wstring& path) {
+#ifdef _WIN32
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, nullptr);
@@ -47,12 +55,17 @@ MappedFile::MappedFile(const std::wstring& path) {
     data_ = static_cast<const uint8_t*>(MapViewOfFile(m, FILE_MAP_READ, 0, 0, 0));
     if (!data_) { err_ = GetLastError(); CloseHandle(m); mapping_ = nullptr; CloseHandle(h); file_ = nullptr; return; }
     ok_ = true;
+#else
+    (void)path;
+#endif
 }
 
 MappedFile::~MappedFile() {
+#ifdef _WIN32
     if (data_) UnmapViewOfFile(data_);
     if (mapping_) CloseHandle((HANDLE)mapping_);
     if (file_) CloseHandle((HANDLE)file_);
+#endif
 }
 
 } // namespace dscan
