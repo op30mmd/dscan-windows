@@ -36,6 +36,16 @@ public:
         notFull_.notify_all();
     }
 
+    bool is_closed() const {
+        std::lock_guard lk(m_);
+        return closed_;
+    }
+
+    size_t size() const {
+        std::lock_guard lk(m_);
+        return q_.size();
+    }
+
 private:
     size_t cap_;
     bool closed_ = false;

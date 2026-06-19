@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <chrono>
+#include <io.h>
 
 namespace dscan {
 
@@ -88,7 +89,7 @@ static void log_deletion(const Config& cfg, const Finding& f, bool permanent, bo
         << f.path << L" | ";
     for (auto& r : f.results) {
         if (severity(r.verdict) >= 1) {
-            log << r.method << L":" << r.detail << L"; ";
+            log << to_wstring(r.method) << L":" << to_wstring(r.detail) << L"; ";
         }
     }
     log << L"\n";
