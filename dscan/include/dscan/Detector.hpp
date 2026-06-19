@@ -4,6 +4,7 @@
 #include <vector>
 #include "Config.hpp"
 #include "Verdict.hpp"
+#include "xxhash.h"
 
 namespace dscan {
 
@@ -11,6 +12,12 @@ struct FileContext {
     std::wstring path;
     uint64_t size = 0;
     std::string extLower;       // ".png" etc.
+
+    // Shared results for single-pass read
+    bool hashValid = false;
+    XXH128_hash_t hash;
+    uint32_t crc = 0;
+    double entropy = 0;
 };
 
 class IDetector {

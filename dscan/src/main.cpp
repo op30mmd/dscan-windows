@@ -9,10 +9,23 @@
 #include <thread>
 #include <vector>
 #include <iostream>
+#include <algorithm>
+#include "xxhash.h"
+#include <windows.h>
 #include <fcntl.h>
 #include <io.h>
 
 using namespace dscan;
+
+namespace dscan {
+    void load_manifest(const std::wstring& path);
+    struct ManifestEntry {
+        uint64_t size;
+        uint64_t mtime;
+        XXH128_hash_t hash;
+    };
+    void save_manifest(const std::wstring& path, const std::vector<std::pair<std::wstring, ManifestEntry>>& entries);
+}
 
 int wmain(int argc, wchar_t** argv) {
     // Set console to UTF-16 mode for wide character output
@@ -23,10 +36,23 @@ int wmain(int argc, wchar_t** argv) {
     if (cfg.threads == 0)
         cfg.threads = std::max(2u, std::thread::hardware_concurrency());
 
+    if (!cfg.manifestPath.empty() && !cfg.writeManifest) {
+        load_manifest(cfg.manifestPath);
+    }
+
     BoundedQueue<FileContext> queue(cfg.threads * 64);
     std::vector<Finding> findings;
     std::mutex findingsMx;
     std::atomic<uint64_t> scanned{0}, flagged{0};
+
+    struct ManifestData {
+        std::wstring path;
+        uint64_t size;
+        uint64_t mtime;
+        XXH128_hash_t hash;
+    };
+    std::vector<ManifestData> manifestCollected;
+    std::mutex manifestMx;
 
     // Producer thread: walk the tree.
     std::thread producer([&]{
@@ -64,6 +90,15 @@ int wmain(int argc, wchar_t** argv) {
                 std::lock_guard lk(findingsMx);
                 findings.push_back(std::move(fnd));
             }
+
+            if (cfg.writeManifest && fc.hashValid) {
+                WIN32_FILE_ATTRIBUTE_DATA attr;
+                if (GetFileAttributesExW(fc.path.c_str(), GetFileExInfoStandard, &attr)) {
+                    uint64_t mtime = (uint64_t(attr.ftLastWriteTime.dwHighDateTime) << 32) | attr.ftLastWriteTime.dwLowDateTime;
+                    std::lock_guard lk(manifestMx);
+                    manifestCollected.push_back({fc.path, fc.size, mtime, fc.hash});
+                }
+            }
         }
     };
 
@@ -74,6 +109,19 @@ int wmain(int argc, wchar_t** argv) {
     for (auto& t : pool) t.join();
 
     std::wcout << L"Scanned " << scanned.load() << L" files, flagged " << flagged.load() << L".\n";
+
+    if (cfg.writeManifest && !cfg.manifestPath.empty()) {
+        std::vector<std::pair<std::wstring, dscan::ManifestEntry>> entries;
+        for (auto& m : manifestCollected) {
+            entries.push_back({m.path, {m.size, m.mtime, m.hash}});
+        }
+        save_manifest(cfg.manifestPath, entries);
+    }
+
+    // Sort findings by path for determinism
+    std::sort(findings.begin(), findings.end(), [](const Finding& a, const Finding& b) {
+        return a.path < b.path;
+    });
 
     if (!cfg.reportPath.empty()) write_report(findings, cfg);
     review_and_delete(findings, cfg);

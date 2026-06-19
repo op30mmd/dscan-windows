@@ -16,6 +16,44 @@ struct ManifestEntry {
 static std::map<std::wstring, ManifestEntry> g_manifest;
 static bool g_manifestLoaded = false;
 
+void load_manifest(const std::wstring& path) {
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) return;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string pathStr, sizeStr, mtimeStr, hashLowStr, hashHighStr;
+        if (std::getline(ss, pathStr, '\t') &&
+            std::getline(ss, sizeStr, '\t') &&
+            std::getline(ss, mtimeStr, '\t') &&
+            std::getline(ss, hashLowStr, '\t') &&
+            std::getline(ss, hashHighStr, '\t')) {
+
+            std::wstring wpath(pathStr.begin(), pathStr.end());
+            ManifestEntry entry;
+            entry.size = std::stoull(sizeStr);
+            entry.mtime = std::stoull(mtimeStr);
+            entry.hash.low64 = std::stoull(hashLowStr, nullptr, 16);
+            entry.hash.high64 = std::stoull(hashHighStr, nullptr, 16);
+            g_manifest[wpath] = entry;
+        }
+    }
+    g_manifestLoaded = true;
+}
+
+void save_manifest(const std::wstring& path, const std::vector<std::pair<std::wstring, ManifestEntry>>& entries) {
+    std::wofstream out(path.c_str(), std::ios::binary);
+    if (!out) return;
+    for (const auto& pair : entries) {
+        out << pair.first << L"\t"
+            << pair.second.size << L"\t"
+            << pair.second.mtime << L"\t"
+            << std::hex << pair.second.hash.low64 << L"\t"
+            << std::hex << pair.second.hash.high64 << std::dec << L"\n";
+    }
+}
+
 bool ManifestDetector::applies(const FileContext&) const {
     return g_manifestLoaded;
 }
@@ -32,9 +70,9 @@ void set_last_hash(XXH128_hash_t h) {
     tl_hashValid = true;
 }
 
+
 DetectionResult ManifestDetector::check(const FileContext& f, const Config& cfg) {
-    if (!tl_hashValid) return { Verdict::Skipped, "no hash available", "manifest" };
-    tl_hashValid = false; // consume it
+    if (!f.hashValid) return { Verdict::Skipped, "no hash available", "manifest" };
 
     auto it = g_manifest.find(f.path);
     if (it == g_manifest.end()) return { Verdict::Skipped, "not in manifest", "manifest" };
@@ -45,7 +83,7 @@ DetectionResult ManifestDetector::check(const FileContext& f, const Config& cfg)
 
     uint64_t currentMtime = (uint64_t(attr.ftLastWriteTime.dwHighDateTime) << 32) | attr.ftLastWriteTime.dwLowDateTime;
 
-    bool hashMatch = (tl_lastHash.low64 == it->second.hash.low64 && tl_lastHash.high64 == it->second.hash.high64);
+    bool hashMatch = (f.hash.low64 == it->second.hash.low64 && f.hash.high64 == it->second.hash.high64);
 
     if (!hashMatch) {
         if (currentMtime == it->second.mtime) {

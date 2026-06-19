@@ -23,11 +23,15 @@ std::string lower_ext(const std::wstring& filename) {
 void walk(const std::wstring& root, const Config& cfg,
           const std::function<void(FileContext)>& emit) {
     std::stack<std::wstring> dirs;
-    dirs.push(root);
+    std::wstring longRoot = root;
+    if (root.substr(0, 4) != L"\\\\?\\") {
+        longRoot = L"\\\\?\\" + root;
+    }
+    dirs.push(longRoot);
 
-    // Default exclusions
-    static const std::vector<std::wstring> excludedDirs = {
-        L"C:\\Windows", L"C:\\$Recycle.Bin", L"System Volume Information"
+    // Default exclusions (drive-agnostic)
+    static const std::vector<std::wstring> excludedDirNames = {
+        L"Windows", L"$Recycle.Bin", L"System Volume Information"
     };
     static const std::vector<std::wstring> excludedFiles = {
         L"pagefile.sys", L"hiberfil.sys", L"swapfile.sys"
@@ -37,14 +41,19 @@ void walk(const std::wstring& root, const Config& cfg,
         std::wstring dir = dirs.top();
         dirs.pop();
 
-        bool excluded = false;
-        for (const auto& ex : excludedDirs) {
-            if (_wcsicmp(dir.c_str(), ex.c_str()) == 0) { excluded = true; break; }
-        }
-        if (excluded) continue;
 
         std::wstring pattern = dir;
         if (!pattern.empty() && pattern.back() != L'\\') pattern += L'\\';
+
+        // Check if this directory should be excluded
+        size_t lastBackslash = dir.find_last_of(L'\\');
+        std::wstring dirName = (lastBackslash == std::wstring::npos) ? dir : dir.substr(lastBackslash + 1);
+        bool excludedDir = false;
+        for (const auto& ex : excludedDirNames) {
+            if (_wcsicmp(dirName.c_str(), ex.c_str()) == 0) { excludedDir = true; break; }
+        }
+        if (excludedDir) continue;
+
         pattern += L'*';
 
         WIN32_FIND_DATAW fd;

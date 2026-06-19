@@ -1,27 +1,45 @@
 #include "dscan/detectors/IoHashDetector.hpp"
 #include "dscan/FileReader.hpp"
 #include "dscan/Crc32c.hpp"
+#include <cmath>
 
 namespace dscan {
 
-void set_last_hash(XXH128_hash_t h);
-
-DetectionResult IoHashDetector::check(const FileContext& f, const Config&) {
+DetectionResult IoHashDetector::check(const FileContext& f, const Config& cfg) {
+    FileContext& fc = const_cast<FileContext&>(f);
     XXH3_state_t* st = XXH3_createState();
     XXH3_128bits_reset(st);
     uint32_t crc = 0;
 
+    std::array<uint64_t, 256> counts{};
+    uint64_t total = 0;
+
     IoError e = stream_file(f.path, 1u << 20, [&](std::span<const uint8_t> blk) {
         crc = crc32c(crc, blk.data(), blk.size());
         XXH3_128bits_update(st, blk.data(), blk.size());
+        if (cfg.methods.count("entropy")) {
+            for (uint8_t b : blk) counts[b]++;
+            total += blk.size();
+        }
     });
 
     XXH128_hash_t h = XXH3_128bits_digest(st);
     XXH3_freeState(st);
 
-    lastHash_ = h;
-    lastCrc_ = crc;
-    set_last_hash(h);
+    fc.hashValid = true;
+    fc.hash = h;
+    fc.crc = crc;
+
+    if (cfg.methods.count("entropy") && total > 0) {
+        double entropy = 0;
+        for (uint64_t count : counts) {
+            if (count > 0) {
+                double p = (double)count / total;
+                entropy -= p * std::log2(p);
+            }
+        }
+        fc.entropy = entropy;
+    }
 
     if (e.failed) {
         if (e.winError == 23 /*ERROR_CRC*/ || e.winError == 30 ||
