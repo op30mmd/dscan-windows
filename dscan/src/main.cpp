@@ -109,9 +109,9 @@ int wmain(int argc, wchar_t** argv) {
                              BY_HANDLE_FILE_INFORMATION info;
                              if (GetFileInformationByHandle(h, &info)) { fc.fileRef = (uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow; }
                              if (cfg.physicalOrder) {
-                                 STARTING_VCN_INPUT_BUFFER vcnInput = {0}; RETRIEVAL_POINTERS_BUFFER outBuf; DWORD outBytes;
+                                 STARTING_VCN_INPUT_BUFFER vcnInput = {0}; struct { RETRIEVAL_POINTERS_BUFFER header; EXTENT extents[1]; } outBuf; DWORD outBytes;
                                  if (DeviceIoControl(h, FSCTL_GET_RETRIEVAL_POINTERS, &vcnInput, sizeof(vcnInput), &outBuf, sizeof(outBuf), &outBytes, nullptr) || GetLastError() == ERROR_MORE_DATA) {
-                                     fc.startLcn = outBuf.Extents[0].Lcn.QuadPart;
+                                     if (outBuf.header.ExtentCount > 0) fc.startLcn = outBuf.header.Extents[0].Lcn.QuadPart;
                                  }
                              }
                              CloseHandle(h);
@@ -250,7 +250,7 @@ int wmain(int argc, wchar_t** argv) {
                         fc.entropy = entropy;
                     }
                     { std::lock_guard lk(currentPathMx); currentPath = fc.path; }
-                    if (cfg.maxFileBytes && fc.size > cfg.maxFileBytes) { activeFiles.erase(task.fileRef); continue; }
+                    if (cfg.maxFileBytes && fc.size > cfg.maxFileBytes) { activeFiles.erase(task.path); continue; }
                     Finding fnd; fnd.path = fc.path; fnd.size = fc.size;
                     for (auto& det : pipeline) {
                         if (!det->applies(fc)) continue;

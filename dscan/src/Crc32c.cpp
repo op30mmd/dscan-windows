@@ -47,6 +47,10 @@ uint32_t crc32c(uint32_t crc, const void* data, size_t len) {
     static const bool hw = sse42_supported();
     if (hw) {
         uint32_t c = ~crc;
+        while (len && (reinterpret_cast<uintptr_t>(p) & 7)) {
+            c = _mm_crc32_u8(c, *p++);
+            len--;
+        }
 #if defined(__x86_64__) || defined(_M_X64)
         while (len >= 8) {
             c = (uint32_t)_mm_crc32_u64(c, *reinterpret_cast<const uint64_t*>(p));
@@ -61,7 +65,7 @@ uint32_t crc32c(uint32_t crc, const void* data, size_t len) {
         return ~c;
     }
 #endif
-    return crc32c_sw(crc, p, len);
+    return crc32c_sw(crc, static_cast<const uint8_t*>(data), len);
 }
 
 uint32_t crc32_ieee(uint32_t crc, const void* data, size_t len) {
