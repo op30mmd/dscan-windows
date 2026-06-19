@@ -23,8 +23,11 @@ DetectionResult Mp4Detector::check(const FileContext& f, const Config&) {
 
         if (len == 1) { // 64-bit length
             if (off + 16 > n) return { Verdict::Corrupt, "truncated 64-bit box", "struct/mp4" };
-            // Should read 8 more bytes for length, but for basic check we just ensure we don't crash
-            off += 16;
+            uint64_t largeLen = 0;
+            for (int i = 0; i < 8; ++i) largeLen = (largeLen << 8) | p[off + 8 + i];
+            if (off + largeLen > n && largeLen != 0) return { Verdict::Corrupt, std::string("truncated 64-bit box: ") + type, "struct/mp4" };
+            if (largeLen == 0) break; // extends to EOF
+            off += largeLen;
             continue;
         }
         if (len == 0) break; // extends to EOF

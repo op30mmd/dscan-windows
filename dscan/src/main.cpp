@@ -15,6 +15,7 @@
 #include <algorithm>
 #include "xxhash.h"
 #include <windows.h>
+#include <winioctl.h>
 #include <fcntl.h>
 #include <io.h>
 
