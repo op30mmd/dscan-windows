@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dscan-implementation
   workflow_dispatch:
 
 jobs:
@@ -20,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Configure CMake
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build
 
       - name: Build
         run: cmake --build build --config Release

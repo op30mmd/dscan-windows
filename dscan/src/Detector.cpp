@@ -22,7 +22,7 @@ std::vector<std::unique_ptr<IDetector>> build_pipeline(const Config& cfg) {
     if (cfg.methods.count("magic")) {
         pipeline.push_back(std::make_unique<MagicDetector>());
     }
-    if (cfg.methods.count("io") || cfg.methods.count("manifest") || cfg.writeManifest) {
+    if (cfg.methods.count("io") || cfg.methods.count("manifest") || cfg.methods.count("entropy") || cfg.writeManifest) {
         pipeline.push_back(std::make_unique<IoHashDetector>());
     }
     if (cfg.methods.count("struct")) {
@@ -39,7 +39,7 @@ std::vector<std::unique_ptr<IDetector>> build_pipeline(const Config& cfg) {
         pipeline.push_back(std::make_unique<EntropyDetector>());
     }
 
-    std::sort(pipeline.begin(), pipeline.end(), [](const auto& a, const auto& b) {
+    std::stable_sort(pipeline.begin(), pipeline.end(), [](const auto& a, const auto& b) {
         return a->cost() < b->cost();
     });
 

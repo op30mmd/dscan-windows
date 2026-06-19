@@ -4,6 +4,7 @@
 #include "dscan/Detector.hpp"
 #include "dscan/Report.hpp"
 #include "dscan/ReviewUI.hpp"
+#include "dscan/detectors/ManifestDetector.hpp"
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -17,15 +18,6 @@
 
 using namespace dscan;
 
-namespace dscan {
-    void load_manifest(const std::wstring& path);
-    struct ManifestEntry {
-        uint64_t size;
-        uint64_t mtime;
-        XXH128_hash_t hash;
-    };
-    void save_manifest(const std::wstring& path, const std::vector<std::pair<std::wstring, ManifestEntry>>& entries);
-}
 
 int wmain(int argc, wchar_t** argv) {
     // Set console to UTF-16 mode for wide character output

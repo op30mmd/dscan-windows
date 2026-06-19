@@ -4,46 +4,42 @@
 #include <map>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 namespace dscan {
-
-struct ManifestEntry {
-    uint64_t size;
-    uint64_t mtime;
-    XXH128_hash_t hash;
-};
 
 static std::map<std::wstring, ManifestEntry> g_manifest;
 static bool g_manifestLoaded = false;
 
 void load_manifest(const std::wstring& path) {
-    std::ifstream in(path.c_str(), std::ios::binary);
+    std::wifstream in(path.c_str());
     if (!in) return;
-    std::string line;
+    std::wstring line;
     while (std::getline(in, line)) {
         if (line.empty()) continue;
-        std::stringstream ss(line);
-        std::string pathStr, sizeStr, mtimeStr, hashLowStr, hashHighStr;
-        if (std::getline(ss, pathStr, '\t') &&
-            std::getline(ss, sizeStr, '\t') &&
-            std::getline(ss, mtimeStr, '\t') &&
-            std::getline(ss, hashLowStr, '\t') &&
-            std::getline(ss, hashHighStr, '\t')) {
+        std::wstringstream ss(line);
+        std::wstring pathStr, sizeStr, mtimeStr, hashLowStr, hashHighStr;
+        if (std::getline(ss, pathStr, L'\t') &&
+            std::getline(ss, sizeStr, L'\t') &&
+            std::getline(ss, mtimeStr, L'\t') &&
+            std::getline(ss, hashLowStr, L'\t') &&
+            std::getline(ss, hashHighStr, L'\t')) {
 
-            std::wstring wpath(pathStr.begin(), pathStr.end());
-            ManifestEntry entry;
-            entry.size = std::stoull(sizeStr);
-            entry.mtime = std::stoull(mtimeStr);
-            entry.hash.low64 = std::stoull(hashLowStr, nullptr, 16);
-            entry.hash.high64 = std::stoull(hashHighStr, nullptr, 16);
-            g_manifest[wpath] = entry;
+            try {
+                ManifestEntry entry;
+                entry.size = std::stoull(sizeStr);
+                entry.mtime = std::stoull(mtimeStr);
+                entry.hash.low64 = std::stoull(hashLowStr, nullptr, 16);
+                entry.hash.high64 = std::stoull(hashHighStr, nullptr, 16);
+                g_manifest[pathStr] = entry;
+            } catch (...) {}
         }
     }
     g_manifestLoaded = true;
 }
 
 void save_manifest(const std::wstring& path, const std::vector<std::pair<std::wstring, ManifestEntry>>& entries) {
-    std::wofstream out(path.c_str(), std::ios::binary);
+    std::wofstream out(path.c_str());
     if (!out) return;
     for (const auto& pair : entries) {
         out << pair.first << L"\t"
