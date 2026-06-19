@@ -67,7 +67,7 @@ void set_last_hash(XXH128_hash_t h) {
 }
 
 
-DetectionResult ManifestDetector::check(const FileContext& f, const Config& cfg) {
+DetectionResult ManifestDetector::check(const FileContext& f, const Config& /*cfg*/) {
     if (!f.hashValid) return { Verdict::Skipped, "no hash available", "manifest" };
 
     auto it = g_manifest.find(f.path);

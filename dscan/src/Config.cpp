@@ -46,12 +46,14 @@ Config parse_args(int argc, wchar_t** argv) {
             size_t start = 0, end;
             while ((end = list.find(L',', start)) != std::wstring::npos) {
                 std::wstring m = list.substr(start, end - start);
-                std::string sm(m.begin(), m.end());
+                std::string sm;
+                for (wchar_t c : m) sm += (char)c;
                 cfg.methods.insert(sm);
                 start = end + 1;
             }
             std::wstring m = list.substr(start);
-            std::string sm(m.begin(), m.end());
+            std::string sm;
+            for (wchar_t c : m) sm += (char)c;
             cfg.methods.insert(sm);
         } else if (arg == L"--all-checks") {
             cfg.allChecks = true;

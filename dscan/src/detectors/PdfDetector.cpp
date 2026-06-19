@@ -47,7 +47,7 @@ DetectionResult PdfDetector::check(const FileContext& f, const Config&) {
                 if (xrefOff > 0 && (uint64_t)xrefOff < n) {
                     // Check if 'xref' or an object exists at that offset
                     const uint8_t* target = p + xrefOff;
-                    if (xrefOff + 4 <= n && (std::memcmp(target, "xref", 4) == 0 || (target[0] >= '0' && target[0] <= '9'))) {
+                    if ((uint64_t)xrefOff + 4 <= n && (std::memcmp(target, "xref", 4) == 0 || (target[0] >= '0' && target[0] <= '9'))) {
                         // Looks good enough
                     } else {
                         return { Verdict::Corrupt, "startxref points to invalid location", "struct/pdf" };

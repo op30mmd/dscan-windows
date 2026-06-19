@@ -2,6 +2,7 @@
 #include "dscan/FileReader.hpp"
 #include "dscan/Crc32c.hpp"
 #include <cmath>
+#include <array>
 
 namespace dscan {
 
