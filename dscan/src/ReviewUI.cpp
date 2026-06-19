@@ -1,11 +1,8 @@
-#include "dscan/ReviewUI.hpp"
+#include "dscan/platform/WinSys.hpp"
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
 #include <shellapi.h>
 #endif
+#include "dscan/ReviewUI.hpp"
 #include <iostream>
 #include <string>
 #include <sstream>

@@ -1,11 +1,5 @@
+#include "dscan/platform/WinSys.hpp"
 #include "dscan/Walker.hpp"
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <winioctl.h>
-#endif
 #include <stack>
 #include <algorithm>
 #include <map>

@@ -1,8 +1,6 @@
+#include "dscan/platform/WinSys.hpp"
 #include "dscan/detectors/ManifestDetector.hpp"
 #include "dscan/detectors/IoHashDetector.hpp"
-#ifdef _WIN32
-#include <windows.h>
-#endif
 #include <map>
 #include <fstream>
 #include <sstream>

@@ -5,6 +5,10 @@
 #include "dscan/Report.hpp"
 #include "dscan/ReviewUI.hpp"
 #include "dscan/detectors/ManifestDetector.hpp"
+#ifdef _WIN32
+#include <initguid.h>
+#endif
+#include "dscan/platform/WinSys.hpp"
 #include "dscan/BufferPool.hpp"
 #include "dscan/Crc32c.hpp"
 #include <atomic>
@@ -25,14 +29,8 @@
 #include "dscan/DiskUtils.hpp"
 
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <winioctl.h>
 #include <fcntl.h>
 #include <io.h>
-#include <initguid.h>
 #endif
 
 using namespace dscan;
