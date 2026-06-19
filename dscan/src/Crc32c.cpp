@@ -14,14 +14,16 @@ static bool sse42_supported() {
 #if defined(_MSC_VER)
     int regs[4] = {0};
     __cpuid(regs, 1);
-    return (regs[2] & (1 << 20)) != 0; // ECX bit 20 = SSE4.2
+    return (regs[2] & (1 << 20)) != 0;
 #elif defined(__GNUC__) || defined(__clang__)
     unsigned int eax, ebx, ecx, edx;
     if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
         return (ecx & (1 << 20)) != 0;
     }
-#endif
     return false;
+#else
+    return false;
+#endif
 }
 
 static uint32_t crc32c_sw(uint32_t crc, const uint8_t* p, size_t n) {

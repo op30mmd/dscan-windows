@@ -58,7 +58,7 @@ static bool enumerate_mft(const std::wstring& root, const Config& cfg, const std
     for (auto const& [ref, e] : mft) {
         if (e.attr & FILE_ATTRIBUTE_DIRECTORY) continue;
         std::wstring fullPath = getPath(ref, getPath); if (fullPath.empty()) continue;
-        if (_wcsnicmp(fullPath.c_str(), longRoot.c_str(), longRoot.size()) != 0) continue;
+        if (_wcsnicmp(fullPath.c_str(), longRoot.c_str(), (bool)longRoot.size()) != 0) continue;
         bool excluded = false; for (const auto& ex : excludedFiles) { if (_wcsicmp(e.name.c_str(), ex.c_str()) == 0) { excluded = true; break; } }
         if (excluded) continue;
         for (const auto& ex : excludedDirNames) { std::wstring needle = L"\\" + ex + L"\\"; if (fullPath.find(needle) != std::wstring::npos) { excluded = true; break; } }

@@ -1,3 +1,7 @@
+#ifdef _WIN32
+#include <initguid.h>
+#endif
+#include "dscan/platform/WinSys.hpp"
 #include "dscan/Config.hpp"
 #include "dscan/BoundedQueue.hpp"
 #include "dscan/Walker.hpp"
@@ -5,10 +9,6 @@
 #include "dscan/Report.hpp"
 #include "dscan/ReviewUI.hpp"
 #include "dscan/detectors/ManifestDetector.hpp"
-#ifdef _WIN32
-#include <initguid.h>
-#endif
-#include "dscan/platform/WinSys.hpp"
 #include "dscan/BufferPool.hpp"
 #include "dscan/Crc32c.hpp"
 #include <atomic>
@@ -99,8 +99,13 @@ int wmain(int argc, wchar_t** argv) {
         std::thread producer([&]{
             if (!pathsToScan.empty()) {
                 if (isSsd) {
+                    for (const auto& p : pathsToScan) {
+                        if (g_quit) break;
+                        FileContext fc; fc.path = p;
+                        size_t h = std::hash<std::wstring>{}(fc.path);
+                        WorkTask task; task.path = fc.path; task.fc = std::move(fc); task.firstChunk = true; workerQueues[h % cfg.threads]->push(std::move(task));
+                    }
                 } else {
-                    // Physical order re-sort for survivors
                     std::vector<FileContext> fcs;
                     for (const auto& p : pathsToScan) {
                          FileContext fc; fc.path = p;
@@ -109,9 +114,10 @@ int wmain(int argc, wchar_t** argv) {
                              BY_HANDLE_FILE_INFORMATION info;
                              if (GetFileInformationByHandle(h, &info)) { fc.fileRef = (uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow; }
                              if (cfg.physicalOrder) {
-                                 STARTING_VCN_INPUT_BUFFER vcnInput = {0}; struct { RETRIEVAL_POINTERS_BUFFER header; EXTENT extents[1]; } outBuf; DWORD outBytes;
+                                 STARTING_VCN_INPUT_BUFFER vcnInput = {0};
+                                 RETRIEVAL_POINTERS_BUFFER outBuf; DWORD outBytes;
                                  if (DeviceIoControl(h, FSCTL_GET_RETRIEVAL_POINTERS, &vcnInput, sizeof(vcnInput), &outBuf, sizeof(outBuf), &outBytes, nullptr) || GetLastError() == ERROR_MORE_DATA) {
-                                     if (outBuf.header.ExtentCount > 0) fc.startLcn = outBuf.header.Extents[0].Lcn.QuadPart;
+                                     if (outBuf.ExtentCount > 0) fc.startLcn = outBuf.Extents[0].Lcn.QuadPart;
                                  }
                              }
                              CloseHandle(h);
@@ -126,16 +132,7 @@ int wmain(int argc, wchar_t** argv) {
                         }
                         return a.fileRef < b.fileRef;
                     });
-                    pathsToScan.clear();
-                    for (auto& fc : fcs) pathsToScan.push_back(fc.path);
-                }
-
-                for (const auto& p : pathsToScan) {
-                    if (g_quit) break;
-                    FileContext fc; fc.path = p;
-                    size_t h = std::hash<std::wstring>{}(fc.path);
-                    if (isSsd) { WorkTask task; task.path = fc.path; task.fc = std::move(fc); task.firstChunk = true; workerQueues[h % cfg.threads]->push(std::move(task)); }
-                    else { readerQueue.push(std::move(fc)); }
+                    for (auto& fc : fcs) { if (g_quit) break; readerQueue.push(std::move(fc)); }
                 }
             } else {
                 walk(cfg.root, cfg, [&](FileContext fc) {
@@ -147,9 +144,10 @@ int wmain(int argc, wchar_t** argv) {
                             if (scanCache.count(fc.path) && scanCache[fc.path] == mtime) return;
                         }
                     }
-                    size_t h = std::hash<std::wstring>{}(fc.path);
-                    if (isSsd) { WorkTask task; task.path = fc.path; task.fc = std::move(fc); task.firstChunk = true; workerQueues[h % cfg.threads]->push(std::move(task)); }
-                    else { readerQueue.push(std::move(fc)); }
+                    if (isSsd) {
+                        size_t h = std::hash<std::wstring>{}(fc.path);
+                        WorkTask task; task.path = fc.path; task.fc = std::move(fc); task.firstChunk = true; workerQueues[h % cfg.threads]->push(std::move(task));
+                    } else { readerQueue.push(std::move(fc)); }
                 });
             }
             readerQueue.close();
@@ -163,43 +161,32 @@ int wmain(int argc, wchar_t** argv) {
                 while (!g_quit) {
                     auto fcOpt = readerQueue.pop(); if (!fcOpt) break;
                     FileContext& fc = *fcOpt;
-                    DWORD flags = FILE_FLAG_SEQUENTIAL_SCAN;
-                    if (cfg.noCache) flags |= FILE_FLAG_NO_BUFFERING;
+                    DWORD flags = FILE_FLAG_SEQUENTIAL_SCAN; if (cfg.noCache) flags |= FILE_FLAG_NO_BUFFERING;
                     HANDLE hFile = CreateFileW(fc.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, flags, nullptr);
                     size_t qIdx = std::hash<std::wstring>{}(fc.path) % cfg.threads;
                     if (hFile != INVALID_HANDLE_VALUE) {
                         uint64_t remaining = fc.size; fc.isStreaming = (fc.size > pool.bufferSize());
                         if (headerOnly) {
-                            fc.isPartial = true;
-                            auto buf = pool.acquire(); DWORD got = 0;
+                            fc.isPartial = true; auto buf = pool.acquire(); DWORD got = 0;
                             DWORD toRead = (DWORD)std::min((uint64_t)pool.bufferSize(), fc.size);
                             if (cfg.noCache) toRead = (toRead + sectorSize - 1) & ~(sectorSize - 1);
                             ReadFile(hFile, buf, toRead, &got, nullptr);
                             WorkTask task; task.path = fc.path; task.fileRef = fc.fileRef; task.fc = std::move(fc); task.firstChunk = true; task.buffer = buf; task.bytesUsed = (size_t)std::min((uint64_t)got, task.fc.size);
                             if (task.fc.size > pool.bufferSize()) {
-                                // Large file in cheap pass: also read footer
-                                auto fbuf = pool.acquire();
-                                uint64_t footerOff = task.fc.size - pool.bufferSize();
+                                auto fbuf = pool.acquire(); uint64_t footerOff = task.fc.size - pool.bufferSize();
                                 if (cfg.noCache) footerOff &= ~(uint64_t(sectorSize) - 1);
-                                LARGE_INTEGER off; off.QuadPart = (long long)footerOff;
-                                SetFilePointerEx(hFile, off, nullptr, FILE_BEGIN);
-                                DWORD fgot = 0;
-                                ReadFile(hFile, fbuf, (DWORD)pool.bufferSize(), &fgot, nullptr);
+                                LARGE_INTEGER off; off.QuadPart = (long long)footerOff; SetFilePointerEx(hFile, off, nullptr, FILE_BEGIN);
+                                DWORD fgot = 0; ReadFile(hFile, fbuf, (DWORD)pool.bufferSize(), &fgot, nullptr);
                                 task.lastChunk = false; workerQueues[qIdx]->push(std::move(task));
-                                WorkTask ftask; ftask.path = fc.path; ftask.fileRef = fc.fileRef; ftask.buffer = fbuf; ftask.bytesUsed = fgot; ftask.lastChunk = true;
+                                WorkTask ftask; ftask.path = fc.path; ftask.fileRef = fc.fileRef; ftask.buffer = fbuf; ftask.bytesUsed = (size_t)std::min((uint64_t)fgot, fc.size - footerOff); ftask.lastChunk = true;
                                 workerQueues[qIdx]->push(std::move(ftask));
-                            } else {
-                                task.lastChunk = true; workerQueues[qIdx]->push(std::move(task));
-                            }
+                            } else { task.lastChunk = true; workerQueues[qIdx]->push(std::move(task)); }
                         } else {
                             do {
-                                auto buf = pool.acquire(); DWORD got = 0;
-                                DWORD toRead = (DWORD)pool.bufferSize();
+                                auto buf = pool.acquire(); DWORD got = 0; DWORD toRead = (DWORD)pool.bufferSize();
                                 if (cfg.noCache) toRead = (toRead + sectorSize - 1) & ~(sectorSize - 1);
                                 if (ReadFile(hFile, buf, toRead, &got, nullptr) && got > 0) {
-                                    bool isFirst = (remaining == fc.size);
-                                    size_t actualGot = (size_t)std::min((uint64_t)got, remaining);
-                                    remaining -= actualGot;
+                                    bool isFirst = (remaining == fc.size); size_t actualGot = (size_t)std::min((uint64_t)got, remaining); remaining -= actualGot;
                                     WorkTask task; task.path = fc.path; task.fileRef = fc.fileRef; if (isFirst) { task.fc = std::move(fc); task.firstChunk = true; }
                                     task.buffer = buf; task.bytesUsed = actualGot; task.lastChunk = (remaining == 0);
                                     workerQueues[qIdx]->push(std::move(task));
@@ -216,7 +203,7 @@ int wmain(int argc, wchar_t** argv) {
             for (unsigned i = 0; i < cfg.readers; ++i) readers.emplace_back(readerBody);
         }
 
-        auto worker = [&](unsigned id){
+        auto worker_proc = [&](unsigned id){
             auto pipeline = build_pipeline(cfg);
             struct FileState {
                 FileContext fc; XXH3_state_t* xxh = nullptr; uint32_t crc = 0; std::array<uint64_t, 256> counts{}; uint64_t total = 0;
@@ -242,9 +229,7 @@ int wmain(int argc, wchar_t** argv) {
                 }
                 if (task.lastChunk) {
                     FileContext& fc = state.fc;
-                    if (!fc.isPartial) {
-                        fc.hash = XXH3_128bits_digest(state.xxh); fc.crc = state.crc; fc.hashValid = true;
-                    }
+                    if (!fc.isPartial) { fc.hash = XXH3_128bits_digest(state.xxh); fc.crc = state.crc; fc.hashValid = true; }
                     if (cfg.methods.count("entropy") && state.total > 0 && !fc.isPartial) {
                         double entropy = 0; for (uint64_t count : state.counts) { if (count > 0) { double p = (double)count / (double)state.total; entropy -= p * std::log2(p); } }
                         fc.entropy = entropy;
@@ -276,8 +261,7 @@ int wmain(int argc, wchar_t** argv) {
         };
 
         std::vector<std::thread> workers;
-        for (unsigned i = 0; i < cfg.threads; ++i) workers.emplace_back([&, i]{ worker(i); });
-
+        for (unsigned i = 0; i < cfg.threads; ++i) workers.emplace_back([&, i]{ worker_proc(i); });
         auto start = std::chrono::steady_clock::now();
         std::thread progressThread([&] {
             auto is_active = [&]{ for (auto& q : workerQueues) if (!q->is_closed() || q->size() > 0) return true; return false; };
@@ -291,48 +275,21 @@ int wmain(int argc, wchar_t** argv) {
             }
             std::fwprintf(stderr, L"\n");
         });
-
-        producer.join();
-        for (auto& t : readers) t.join();
+        producer.join(); for (auto& t : readers) t.join();
         if (!isSsd) for (auto& q : workerQueues) q->close();
-        for (auto& t : workers) t.join();
-        if (progressThread.joinable()) progressThread.join();
+        for (auto& t : workers) t.join(); if (progressThread.joinable()) progressThread.join();
     };
 
     if (cfg.headerFirst) {
-        std::wcout << L"Phase 1: Header/Footer pass...\n";
-        run_scan(true);
+        std::wcout << L"Phase 1: Header/Footer pass...\n"; run_scan(true);
         std::vector<std::wstring> survivors;
-        {
-            std::lock_guard lk(findingsMx);
-            for (const auto& f : findings) {
-                if (f.worst != Verdict::Ok) {
-                    survivors.push_back(f.path);
-                } else {
-                    // Even if Ok, we might need second pass for structural or full hash
-                    if (cfg.methods.count("struct") || cfg.methods.count("io")) {
-                        survivors.push_back(f.path);
-                    }
-                }
-            }
-            findings.clear();
-        }
-        if (!survivors.empty()) {
-            std::wcout << L"Phase 2: Full pass on " << survivors.size() << L" candidates...\n";
-            run_scan(false, survivors);
-        }
+        { std::lock_guard lk(findingsMx); for (const auto& f : findings) { if (f.worst != Verdict::Ok) survivors.push_back(f.path); else { if (cfg.methods.count("struct") || cfg.methods.count("io")) survivors.push_back(f.path); } } findings.clear(); }
+        if (!survivors.empty()) { std::wcout << L"Phase 2: Full pass on " << survivors.size() << L" candidates...\n"; run_scan(false, survivors); }
     } else run_scan(false);
 
     std::wcout << L"Done. Scanned " << scanned.load() << L" files, flagged " << flagged.load() << L".\n";
-    if (cfg.writeManifest && !cfg.manifestPath.empty()) {
-        std::vector<std::pair<std::wstring, dscan::ManifestEntry>> entries;
-        for (auto& m : manifestCollected) entries.push_back({m.path, {m.size, m.mtime, m.hash}});
-        save_manifest(cfg.manifestPath, entries);
-    }
-    if (!cfg.scanCachePath.empty()) {
-        std::wofstream out(cfg.scanCachePath);
-        for (auto const& [path, mtime] : scanCache) out << path << L"\t" << mtime << L"\n";
-    }
+    if (cfg.writeManifest && !cfg.manifestPath.empty()) { std::vector<std::pair<std::wstring, dscan::ManifestEntry>> entries; for (auto& m : manifestCollected) entries.push_back({m.path, {m.size, m.mtime, m.hash}}); save_manifest(cfg.manifestPath, entries); }
+    if (!cfg.scanCachePath.empty()) { std::wofstream out(cfg.scanCachePath); for (auto const& [path, mtime] : scanCache) out << path << L"\t" << mtime << L"\n"; }
     std::sort(findings.begin(), findings.end(), [](const Finding& a, const Finding& b) { return a.path < b.path; });
     if (!cfg.reportPath.empty()) write_report(findings, cfg);
     review_and_delete(findings, cfg);
