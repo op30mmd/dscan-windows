@@ -8,6 +8,7 @@
 #include "dscan/detectors/JpegDetector.hpp"
 #include "dscan/detectors/PdfDetector.hpp"
 #include "dscan/detectors/ManifestDetector.hpp"
+#include "dscan/detectors/EntropyDetector.hpp"
 #include <algorithm>
 
 namespace dscan {
@@ -33,6 +34,9 @@ std::vector<std::unique_ptr<IDetector>> build_pipeline(const Config& cfg) {
     }
     if (cfg.methods.count("manifest")) {
         pipeline.push_back(std::make_unique<ManifestDetector>());
+    }
+    if (cfg.methods.count("entropy")) {
+        pipeline.push_back(std::make_unique<EntropyDetector>());
     }
 
     std::sort(pipeline.begin(), pipeline.end(), [](const auto& a, const auto& b) {
