@@ -19,7 +19,7 @@ std::string lower_ext(const std::wstring& filename) {
 #ifdef _WIN32
 static bool enumerate_mft(const std::wstring& root, const Config& cfg, const std::function<void(FileContext)>& emit) {
     std::wstring volPath = get_volume_path(root); if (volPath.empty()) return false;
-    HANDLE hVol = CreateFileW(volPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    HANDLE hVol = CreateFileW(volPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (hVol == INVALID_HANDLE_VALUE) return false;
     USN_JOURNAL_DATA_V0 journal; DWORD bytes;
     if (!DeviceIoControl(hVol, FSCTL_QUERY_USN_JOURNAL, nullptr, 0, &journal, sizeof(journal), &bytes, nullptr)) { CloseHandle(hVol); return false; }

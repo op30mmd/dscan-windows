@@ -36,7 +36,7 @@ DetectionResult MagicDetector::check(const FileContext& f, const Config&) {
 
     const auto& s = it->second;
     if (size < s.head.size())
-        return { Verdict::Corrupt, "too small for header", "magic" };
+        return { Verdict::Suspect, "too small for header", "magic" };
 
     if (!std::equal(s.head.begin(), s.head.end(), data))
         return { Verdict::Suspect, "header/extension mismatch", "magic" };
@@ -51,14 +51,14 @@ DetectionResult MagicDetector::check(const FileContext& f, const Config&) {
 
         if (footerData) {
             if (!std::equal(s.tail.begin(), s.tail.end(), footerData))
-                return { Verdict::Corrupt, "missing/!= expected trailer", "magic" };
+                return { Verdict::Suspect, "missing/!= expected trailer", "magic" };
         } else {
             if (f.isStreaming) {
                 // If we are here, it means the reader/worker didn't provide a footer even though it was streaming.
                 // This shouldn't happen with the new worker logic.
                 return { Verdict::Unreadable, "footer data missing in streaming mode", "magic" };
             }
-            return { Verdict::Corrupt, "too small for trailer", "magic" };
+            return { Verdict::Suspect, "too small for trailer", "magic" };
         }
     }
 

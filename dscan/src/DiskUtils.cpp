@@ -24,7 +24,7 @@ std::wstring get_volume_path(const std::wstring& path) {
 bool device_has_seek_penalty(const std::wstring& volumePath, bool& known) {
     known = false;
     HANDLE h = CreateFileW(volumePath.c_str(), 0,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;
 
     STORAGE_PROPERTY_QUERY q{};
@@ -53,7 +53,7 @@ bool run_seek_benchmark(const std::wstring& volumePath) {
     // However, we want to avoid being too slow on SSDs where IOCTL might fail.
 
     HANDLE h = CreateFileW(volumePath.c_str(), GENERIC_READ,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
                            FILE_FLAG_NO_BUFFERING | FILE_FLAG_RANDOM_ACCESS, nullptr);
     if (h == INVALID_HANDLE_VALUE) return true; // Can't bench, assume SSD to not penalize too much?
     // Wait, guideline says "fail safe, not fast" -> default to HDD-safe.
@@ -106,7 +106,7 @@ bool run_seek_benchmark(const std::wstring& volumePath) {
 std::set<uint32_t> get_volume_disk_numbers(const std::wstring& volumePath) {
     std::set<uint32_t> disks;
     HANDLE h = CreateFileW(volumePath.c_str(), 0,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (h == INVALID_HANDLE_VALUE) return disks;
 
     VOLUME_DISK_EXTENTS extents;

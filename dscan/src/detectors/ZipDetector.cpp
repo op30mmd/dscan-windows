@@ -37,6 +37,9 @@ DetectionResult ZipDetector::check(const FileContext& f, const Config&) {
         // Skip directories for CRC check
         if (mz_zip_reader_is_file_a_directory(&zip, i)) continue;
 
+        // Skip encrypted files for CRC check (we can't verify them without a password)
+        if (mz_zip_reader_is_file_encrypted(&zip, i)) continue;
+
         // We could validate every entry, but that might be slow.
         // miniz has mz_zip_reader_is_file_supported.
         // For dscan, we want to be sure. Let's do a fast CRC check.
