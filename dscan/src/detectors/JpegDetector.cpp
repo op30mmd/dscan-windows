@@ -72,7 +72,8 @@ DetectionResult JpegDetector::check(const FileContext& f, const Config&) {
 
     if (!sawEOI) {
         // If it's a large file and we didn't find EOI, it might be truncated.
-        return { Verdict::Corrupt, "missing EOI marker (truncated)", "struct/jpeg" };
+        // But some valid JPEGs have trailing data or slightly non-standard endings.
+        return { Verdict::Suspect, "missing EOI marker (truncated or trailing data)", "struct/jpeg" };
     }
 
     return { Verdict::Ok, "SOI/EOI and markers valid", "struct/jpeg" };

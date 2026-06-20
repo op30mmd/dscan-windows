@@ -9,6 +9,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <iomanip>
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
@@ -143,6 +144,16 @@ static std::wstring format_error(DWORD err) {
     return msg;
 }
 
+// Shell APIs (IFileOperation / SHFileOperation) reject the \\?\ prefix with
+// E_INVALIDARG. Strip it to a plain Win32 path before deleting.
+static std::wstring ShellPath(const std::wstring& p) {
+    if (p.rfind(LR"(\\?\UNC\)", 0) == 0)   // \\?\UNC\server\share -> \\server\share
+        return LR"(\\)" + p.substr(8);
+    if (p.rfind(LR"(\\?\)", 0) == 0)       // \\?\C:\dir\file -> C:\dir\file
+        return p.substr(4);
+    return p;
+}
+
 static bool recycle_file_modern(const std::wstring& path, HRESULT& hr) {
     IFileOperation* op = nullptr;
     hr = CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&op));
@@ -150,7 +161,8 @@ static bool recycle_file_modern(const std::wstring& path, HRESULT& hr) {
 
     op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOFX_EARLYFAILURE);
     IShellItem* item = nullptr;
-    hr = SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&item));
+    std::wstring sPath = ShellPath(path);
+    hr = SHCreateItemFromParsingName(sPath.c_str(), nullptr, IID_PPV_ARGS(&item));
     if (SUCCEEDED(hr)) {
         hr = op->DeleteItem(item, nullptr);
         if (SUCCEEDED(hr)) hr = op->PerformOperations();
@@ -175,17 +187,26 @@ static bool recycle_or_delete(const std::vector<Finding*>& selected, const Confi
 #ifdef _WIN32
         if (cfg.permanent) {
             success = DeleteFileW(f->path.c_str());
-            if (!success) reason = format_error(GetLastError());
+            if (!success) {
+                DWORD err = GetLastError();
+                reason = L"Win32 error " + std::to_wstring(err) + L": " + format_error(err);
+            }
         } else {
             HRESULT hr;
             success = recycle_file_modern(f->path, hr);
-            if (!success) reason = L"HRESULT " + std::to_wstring(hr) + L": " + format_error(hr);
+            if (!success) reason = L"HRESULT 0x" + [] (HRESULT hr) {
+                std::wstringstream ss;
+                ss << std::hex << std::setw(8) << std::setfill(L'0') << (uint32_t)hr;
+                return ss.str();
+            }(hr) + L": " + format_error(hr);
         }
 #endif
         if (!success) {
             std::wcout << L"DELETE FAILED: " << f->path << L"\n  Reason: " << reason << L"\n";
-            if (reason.find(L"Access is denied") != std::wstring::npos) {
+            if (reason.find(L"Access is denied") != std::wstring::npos ||
+                reason.find(L"0x80070005") != std::wstring::npos) {
                 std::wcout << L"  Hint: This might be caused by Windows Ransomware Protection (Controlled Folder Access).\n";
+                std::wcout << L"  Try adding dscan to 'Allowed apps' in Windows Security -> Ransomware protection.\n";
             }
         }
         log_deletion(cfg, *f, cfg.permanent, success);

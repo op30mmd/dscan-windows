@@ -38,8 +38,15 @@ DetectionResult PngDetector::check(const FileContext& f, const Config&) {
         uint32_t stored = be32(p + off + 8 + len);
         uint32_t calc = crc32_ieee(0, type, 4 + len); // CRC over type+data
 
-        if (calc != stored)
-            return { Verdict::Corrupt, "chunk CRC mismatch", "struct/png" };
+        if (calc != stored) {
+            // Critical chunks: IHDR, PLTE, IDAT, IEND.
+            // A chunk is critical if its first letter is uppercase (bit 5 of first byte is 0).
+            bool critical = (type[0] & 0x20) == 0;
+            if (critical)
+                return { Verdict::Corrupt, "critical chunk CRC mismatch: " + std::string((const char*)type, 4), "struct/png" };
+            else
+                return { Verdict::Suspect, "ancillary chunk CRC mismatch: " + std::string((const char*)type, 4), "struct/png" };
+        }
 
         if (std::memcmp(type, "IHDR", 4) == 0) sawIHDR = (off == 8);
         if (std::memcmp(type, "IEND", 4) == 0) {
