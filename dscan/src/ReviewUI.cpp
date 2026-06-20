@@ -1,6 +1,9 @@
 #include "dscan/platform/WinSys.hpp"
 #ifdef _WIN32
 #include <shellapi.h>
+#include <shobjidl.h>
+#include <shlobj.h>
+#include <combaseapi.h>
 #endif
 #include "dscan/ReviewUI.hpp"
 #include <iostream>
@@ -128,29 +131,69 @@ static bool is_protected_path(const std::wstring& path) {
     return false;
 }
 
+#ifdef _WIN32
+static std::wstring format_error(DWORD err) {
+    wchar_t* buf = nullptr;
+    size_t size = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                 NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&buf, 0, NULL);
+    std::wstring msg = (size > 0) ? buf : L"Unknown error";
+    if (buf) LocalFree(buf);
+    if (!msg.empty() && msg.back() == L'\n') msg.pop_back();
+    if (!msg.empty() && msg.back() == L'\r') msg.pop_back();
+    return msg;
+}
+
+static bool recycle_file_modern(const std::wstring& path, HRESULT& hr) {
+    IFileOperation* op = nullptr;
+    hr = CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&op));
+    if (FAILED(hr)) return false;
+
+    op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOFX_EARLYFAILURE);
+    IShellItem* item = nullptr;
+    hr = SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&item));
+    if (SUCCEEDED(hr)) {
+        hr = op->DeleteItem(item, nullptr);
+        if (SUCCEEDED(hr)) hr = op->PerformOperations();
+        item->Release();
+    }
+    BOOL aborted = FALSE;
+    op->GetAnyOperationsAborted(&aborted);
+    op->Release();
+    return SUCCEEDED(hr) && !aborted;
+}
+#endif
+
 static bool recycle_or_delete(const std::vector<Finding*>& selected, const Config& cfg) {
     if (selected.empty()) return true;
-
+#ifdef _WIN32
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+#endif
     bool allOk = true;
     for (auto* f : selected) {
         bool success = false;
+        std::wstring reason;
 #ifdef _WIN32
         if (cfg.permanent) {
             success = DeleteFileW(f->path.c_str());
+            if (!success) reason = format_error(GetLastError());
         } else {
-            std::wstring from = f->path;
-            from.push_back(L'\0');
-            from.push_back(L'\0');
-            SHFILEOPSTRUCTW op{};
-            op.wFunc = FO_DELETE;
-            op.pFrom = from.c_str();
-            op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
-            success = (SHFileOperationW(&op) == 0 && !op.fAnyOperationsAborted);
+            HRESULT hr;
+            success = recycle_file_modern(f->path, hr);
+            if (!success) reason = L"HRESULT " + std::to_wstring(hr) + L": " + format_error(hr);
         }
 #endif
+        if (!success) {
+            std::wcout << L"DELETE FAILED: " << f->path << L"\n  Reason: " << reason << L"\n";
+            if (reason.find(L"Access is denied") != std::wstring::npos) {
+                std::wcout << L"  Hint: This might be caused by Windows Ransomware Protection (Controlled Folder Access).\n";
+            }
+        }
         log_deletion(cfg, *f, cfg.permanent, success);
         if (!success) allOk = false;
     }
+#ifdef _WIN32
+    CoUninitialize();
+#endif
     return allOk;
 }
 
