@@ -302,7 +302,9 @@ void review_and_delete(std::vector<Finding>& findings, const Config& cfg) {
             std::wstring line; std::getline(std::wcin, line);
             if (line == L"q") return;
             if (line == L"a") {
-                for (size_t i = 0; i < shown.size(); ++i) if (shown[i]->worst == Verdict::Corrupt) selected.insert(i);
+                for (size_t i = 0; i < shown.size(); ++i) {
+                    if (shown[i]->worst == Verdict::Corrupt) selected.insert(i);
+                }
             } else if (line == L"n") {
                 selected.clear();
             } else if (line == L"s") {
@@ -359,12 +361,12 @@ void review_and_delete(std::vector<Finding>& findings, const Config& cfg) {
 
     if (toDeleteFindings.empty()) { std::wcout << L"Nothing selected.\n"; return; }
 
-    // Filter out Unreadable files from automatic/bulk deletion if needed,
+    // Filter out Unreadable and Suspect files from automatic/bulk deletion if needed,
     // but here we just ensure we don't delete them if they aren't "confirmed corrupt"
     // according to the P0 rule: "Never delete Unreadable system/locked files automatically."
     if (cfg.deleteMode == DeleteMode::All) {
         auto it = std::remove_if(toDeleteFindings.begin(), toDeleteFindings.end(), [](Finding* f) {
-            return f->worst == Verdict::Unreadable;
+            return f->worst == Verdict::Unreadable || f->worst == Verdict::Suspect;
         });
         toDeleteFindings.erase(it, toDeleteFindings.end());
     }

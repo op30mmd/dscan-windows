@@ -20,7 +20,7 @@ target_include_directories(miniz PUBLIC dscan/third_party/miniz)
 
 file(GLOB_RECURSE DSCAN_SRC CONFIGURE_DEPENDS dscan/src/*.cpp)
 if(WIN32)
-  list(APPEND DSCAN_SRC dscan/src/dscan.rc)
+  list(APPEND DSCAN_SRC dscan/src/dscan.rc dscan/src/dscan.exe.manifest)
 endif()
 add_executable(dscan ${DSCAN_SRC})
 target_include_directories(dscan PRIVATE dscan/include)

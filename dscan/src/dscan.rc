@@ -34,4 +34,4 @@ BEGIN
 END
 
 // Embed manifest
-1 RT_MANIFEST "dscan.exe.manifest"
+// 1 RT_MANIFEST "dscan.exe.manifest"
