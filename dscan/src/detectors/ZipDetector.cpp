@@ -7,11 +7,22 @@
 namespace dscan {
 
 DetectionResult ZipDetector::check(const FileContext& f, const Config&) {
-    MappedFile mf(f.path);
-    if (!mf.ok()) return { Verdict::Unreadable, "open error " + std::to_string(mf.error()), "struct/zip" };
+    const uint8_t* data = nullptr;
+    uint64_t size = 0;
+    std::unique_ptr<MappedFile> mf;
+
+    if (f.bufferLoaded && !f.isStreaming) {
+        data = f.buffer.data();
+        size = f.buffer.size();
+    } else {
+        mf = std::make_unique<MappedFile>(f.path);
+        if (!mf->ok()) return { Verdict::Unreadable, "open error " + std::to_string(mf->error()), "struct/zip" };
+        data = mf->data();
+        size = mf->size();
+    }
 
     mz_zip_archive zip{};
-    if (!mz_zip_reader_init_mem(&zip, mf.data(), (size_t)mf.size(), 0)) {
+    if (!mz_zip_reader_init_mem(&zip, data, (size_t)size, 0)) {
         return { Verdict::Corrupt, "invalid ZIP format / EOCD not found", "struct/zip" };
     }
 
