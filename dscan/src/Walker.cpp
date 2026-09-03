@@ -41,14 +41,24 @@ static bool enumerate_mft(const std::wstring& root, const Config& cfg, const std
     std::set<uint32_t> volDisks = get_volume_disk_numbers(volPath);
     uint32_t diskNum = volDisks.empty() ? 0 : *volDisks.begin();
     std::map<uint64_t, std::wstring> pathCache; std::wstring drivePrefix = volPath.substr(4); if (drivePrefix.back() != L'\\') drivePrefix += L'\\';
+    std::set<uint64_t> visited;
     auto getPath = [&](uint64_t ref, auto& self) -> std::wstring {
         if (pathCache.count(ref)) return pathCache[ref];
+        if (visited.count(ref)) return L"";
+        visited.insert(ref);
         if (mft.count(ref)) {
-            const auto& e = mft[ref]; if (e.parentRef == ref) return drivePrefix;
-            std::wstring parentPath = self(e.parentRef, self); if (parentPath.empty()) return L"";
+            const auto& e = mft[ref];
+            if (e.parentRef == ref) {
+                visited.erase(ref);
+                return drivePrefix;
+            }
+            std::wstring parentPath = self(e.parentRef, self);
+            visited.erase(ref);
+            if (parentPath.empty()) return L"";
             if (parentPath.back() != L'\\') parentPath += L'\\';
             return pathCache[ref] = parentPath + e.name;
         }
+        visited.erase(ref);
         return L"";
     };
     std::vector<FileContext> allFiles; std::wstring longRoot = root; if (longRoot.substr(0, 4) == L"\\\\?\\") longRoot = longRoot.substr(4);
@@ -58,7 +68,7 @@ static bool enumerate_mft(const std::wstring& root, const Config& cfg, const std
     for (auto const& [ref, e] : mft) {
         if (e.attr & FILE_ATTRIBUTE_DIRECTORY) continue;
         std::wstring fullPath = getPath(ref, getPath); if (fullPath.empty()) continue;
-        if (_wcsnicmp(fullPath.c_str(), longRoot.c_str(), (bool)longRoot.size()) != 0) continue;
+        if (_wcsnicmp(fullPath.c_str(), longRoot.c_str(), longRoot.size()) != 0) continue;
         bool excluded = false; for (const auto& ex : excludedFiles) { if (_wcsicmp(e.name.c_str(), ex.c_str()) == 0) { excluded = true; break; } }
         if (excluded) continue;
         for (const auto& ex : excludedDirNames) { std::wstring needle = L"\\" + ex + L"\\"; if (fullPath.find(needle) != std::wstring::npos) { excluded = true; break; } }
@@ -103,7 +113,7 @@ void walk(const std::wstring& root, const Config& cfg, const std::function<void(
 #ifdef _WIN32
     std::wstring volPath = get_volume_path(root); std::set<uint32_t> volDisks = get_volume_disk_numbers(volPath); uint32_t diskNum = volDisks.empty() ? 0 : *volDisks.begin();
 #else
-    uint32_t diskNum = 0;
+    uint32_t diskNum = 0; (void)diskNum;
 #endif
     static const std::vector<std::wstring> excludedDirNames = { L"Windows", L"$Recycle.Bin", L"System Volume Information", L"Program Files", L"Program Files (x86)" };
     static const std::vector<std::wstring> excludedFiles = { L"pagefile.sys", L"hiberfil.sys", L"swapfile.sys" };
@@ -111,7 +121,11 @@ void walk(const std::wstring& root, const Config& cfg, const std::function<void(
         std::wstring dir = dirs.top(); dirs.pop(); std::wstring pattern = dir; if (!pattern.empty() && pattern.back() != L'\\') pattern += L'\\';
 #ifdef _WIN32
         size_t lastBackslash = dir.find_last_of(L'\\'); std::wstring dirName = (lastBackslash == std::wstring::npos) ? dir : dir.substr(lastBackslash + 1);
-        bool excludedDir = false; for (const auto& ex : excludedDirNames) { if (_wcsicmp(dirName.c_str(), ex.c_str()) == 0) { excludedDir = true; break; } }
+        bool isRoot = (_wcsicmp(dir.c_str(), longRoot.c_str()) == 0 || _wcsicmp(dir.c_str(), root.c_str()) == 0);
+        bool excludedDir = false;
+        if (!isRoot) {
+            for (const auto& ex : excludedDirNames) { if (_wcsicmp(dirName.c_str(), ex.c_str()) == 0) { excludedDir = true; break; } }
+        }
         if (excludedDir) continue;
         pattern += L'*';
         WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileExW(pattern.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);

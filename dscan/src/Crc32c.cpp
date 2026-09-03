@@ -1,25 +1,35 @@
 #include "dscan/Crc32c.hpp"
 #include <array>
-#if defined(_MSC_VER)
-#include <intrin.h>
-#include <nmmintrin.h>
-#elif defined(__GNUC__) || defined(__clang__)
-#include <cpuid.h>
-#include <nmmintrin.h>
+#if defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
+  #define DSCAN_X86_SSE42 1
+#else
+  #define DSCAN_X86_SSE42 0
+#endif
+
+#if DSCAN_X86_SSE42
+  #if defined(_MSC_VER)
+    #include <intrin.h>
+    #include <nmmintrin.h>
+  #elif defined(__GNUC__) || defined(__clang__)
+    #include <cpuid.h>
+    #include <nmmintrin.h>
+  #endif
 #endif
 
 namespace dscan {
 
 static bool sse42_supported() {
-#if defined(_MSC_VER)
+#if DSCAN_X86_SSE42
+  #if defined(_MSC_VER)
     int regs[4] = {0};
     __cpuid(regs, 1);
     return (regs[2] & (1 << 20)) != 0;
-#elif defined(__GNUC__) || defined(__clang__)
+  #elif defined(__GNUC__) || defined(__clang__)
     unsigned int eax, ebx, ecx, edx;
     if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
         return (ecx & (1 << 20)) != 0;
     }
+  #endif
 #endif
     return false;
 }
@@ -43,7 +53,7 @@ static uint32_t crc32c_sw(uint32_t crc, const uint8_t* p, size_t n) {
 
 uint32_t crc32c(uint32_t crc, const void* data, size_t len) {
     const uint8_t* p = static_cast<const uint8_t*>(data);
-#if defined(_MSC_VER) || defined(__GNUC__) || defined(__clang__)
+#if DSCAN_X86_SSE42
     static const bool hw = sse42_supported();
     if (hw) {
         uint32_t c = ~crc;

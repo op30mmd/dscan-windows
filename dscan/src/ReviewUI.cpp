@@ -85,13 +85,30 @@ static void print_verdict_tag(Verdict v) {
     set_color(RESET);
 }
 
+static std::string to_utf8(const std::wstring& wstr) {
+#ifdef _WIN32
+    if (wstr.empty()) return "";
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), NULL, 0, NULL, NULL);
+    std::string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+#else
+    std::string res;
+    for (wchar_t c : wstr) {
+        if (c < 128) res += (char)c;
+        else res += '?';
+    }
+    return res;
+#endif
+}
+
 static void log_deletion(const Config& cfg, const Finding& f, bool permanent, bool success) {
     if (cfg.auditLogPath.empty()) return;
 #ifdef _WIN32
-    std::wofstream log(cfg.auditLogPath, std::ios::app);
+    std::ofstream log(cfg.auditLogPath, std::ios::app);
 #else
     std::string path(cfg.auditLogPath.begin(), cfg.auditLogPath.end());
-    std::wofstream log(path.c_str(), std::ios::app);
+    std::ofstream log(path.c_str(), std::ios::app);
 #endif
     if (!log) return;
 
@@ -103,18 +120,18 @@ static void log_deletion(const Config& cfg, const Finding& f, bool permanent, bo
     timeinfo = *localtime(&now);
 #endif
 
-    log << std::put_time(&timeinfo, L"%Y-%m-%d %H:%M:%S") << L" | "
-        << (success ? L"SUCCESS" : L"FAILURE") << L" | "
-        << (permanent ? L"PERMANENT" : L"RECYCLE") << L" | "
-        << f.size << L" bytes | "
-        << (int)f.worst << L" | "
-        << f.path << L" | ";
+    log << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << " | "
+        << (success ? "SUCCESS" : "FAILURE") << " | "
+        << (permanent ? "PERMANENT" : "RECYCLE") << " | "
+        << f.size << " bytes | "
+        << (int)f.worst << " | "
+        << to_utf8(f.path) << " | ";
     for (auto& r : f.results) {
         if (severity(r.verdict) >= 1) {
-            log << to_wstring(r.method) << L":" << to_wstring(r.detail) << L"; ";
+            log << r.method << ":" << r.detail << "; ";
         }
     }
-    log << L"\n";
+    log << "\n";
 }
 
 static bool is_protected_path(const std::wstring& path) {
@@ -178,7 +195,8 @@ static bool recycle_file_modern(const std::wstring& path, HRESULT& hr) {
 static bool recycle_or_delete(const std::vector<Finding*>& selected, const Config& cfg) {
     if (selected.empty()) return true;
 #ifdef _WIN32
-    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    HRESULT hrInit = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    bool coInitialized = SUCCEEDED(hrInit);
 #endif
     bool allOk = true;
     for (auto* f : selected) {
@@ -213,7 +231,9 @@ static bool recycle_or_delete(const std::vector<Finding*>& selected, const Confi
         if (!success) allOk = false;
     }
 #ifdef _WIN32
-    CoUninitialize();
+    if (coInitialized) {
+        CoUninitialize();
+    }
 #endif
     return allOk;
 }

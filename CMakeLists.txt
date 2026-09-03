@@ -29,3 +29,30 @@ if(MSVC OR MINGW)
 else()
   target_link_libraries(dscan PRIVATE xxhash miniz)
 endif()
+
+enable_testing()
+
+add_executable(test_crc32c dscan/tests/test_crc32c.cpp dscan/src/Crc32c.cpp)
+target_include_directories(test_crc32c PRIVATE dscan/include)
+
+add_executable(test_path_normalization dscan/tests/test_path_normalization.cpp)
+target_include_directories(test_path_normalization PRIVATE dscan/include)
+
+add_executable(test_verdicts dscan/tests/test_verdicts.cpp
+    dscan/src/detectors/JpegDetector.cpp
+    dscan/src/detectors/PngDetector.cpp
+    dscan/src/detectors/ZipDetector.cpp
+    dscan/src/FileReader.cpp
+    dscan/src/Crc32c.cpp
+    dscan/src/Config.cpp
+)
+target_include_directories(test_verdicts PRIVATE dscan/include dscan/third_party/miniz dscan/third_party/xxhash)
+target_link_libraries(test_verdicts PRIVATE miniz xxhash)
+
+add_executable(test_detectors dscan/tests/test_detectors.cpp)
+target_include_directories(test_detectors PRIVATE dscan/include dscan/third_party/xxhash)
+
+add_test(NAME test_crc32c COMMAND test_crc32c)
+add_test(NAME test_path_normalization COMMAND test_path_normalization)
+add_test(NAME test_verdicts COMMAND test_verdicts)
+add_test(NAME test_detectors COMMAND test_detectors)
