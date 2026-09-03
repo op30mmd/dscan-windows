@@ -29,9 +29,13 @@ static bool sse42_supported() {
     if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
         return (ecx & (1 << 20)) != 0;
     }
-  #endif
-#endif
     return false;
+  #else
+    return false;
+  #endif
+#else
+    return false;
+#endif
 }
 
 static uint32_t crc32c_sw(uint32_t crc, const uint8_t* p, size_t n) {
