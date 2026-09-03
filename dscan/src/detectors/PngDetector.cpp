@@ -48,7 +48,11 @@ DetectionResult PngDetector::check(const FileContext& f, const Config&) {
                 return { Verdict::Suspect, "ancillary chunk CRC mismatch: " + std::string((const char*)type, 4), "struct/png" };
         }
 
-        if (std::memcmp(type, "IHDR", 4) == 0) sawIHDR = (off == 8);
+        if (std::memcmp(type, "IHDR", 4) == 0) {
+            if (sawIHDR || off != 8)
+                return { Verdict::Corrupt, "duplicate/misplaced IHDR chunk", "struct/png" };
+            sawIHDR = true;
+        }
         if (std::memcmp(type, "IEND", 4) == 0) {
             sawIEND = true;
             off += 12 + len;

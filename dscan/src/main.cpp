@@ -72,6 +72,7 @@ int wmain(int argc, wchar_t** argv) {
     if (!cfg.manifestPath.empty() && !cfg.writeManifest) load_manifest(cfg.manifestPath);
 
     std::map<std::wstring, uint64_t> scanCache;
+    std::mutex scanCacheMx;
     std::vector<Finding> findings;
     std::mutex findingsMx;
     std::atomic<uint64_t> scanned{0}, flagged{0};
@@ -84,11 +85,14 @@ int wmain(int argc, wchar_t** argv) {
     std::mutex manifestMx;
 
     auto run_scan = [&](bool headerOnly, std::vector<std::wstring> pathsToScan = {}) {
-        if (!cfg.scanCachePath.empty() && scanCache.empty()) {
-            std::wifstream in(cfg.scanCachePath); std::wstring line;
-            while (std::getline(in, line)) {
-                size_t tab = line.find(L'\t');
-                if (tab != std::wstring::npos) scanCache[line.substr(0, tab)] = std::stoull(line.substr(tab + 1));
+        if (!cfg.scanCachePath.empty()) {
+            std::lock_guard lk(scanCacheMx);
+            if (scanCache.empty()) {
+                std::wifstream in(cfg.scanCachePath); std::wstring line;
+                while (std::getline(in, line)) {
+                    size_t tab = line.find(L'\t');
+                    if (tab != std::wstring::npos) scanCache[line.substr(0, tab)] = std::stoull(line.substr(tab + 1));
+                }
             }
         }
 
@@ -141,6 +145,7 @@ int wmain(int argc, wchar_t** argv) {
                         WIN32_FILE_ATTRIBUTE_DATA attr;
                         if (GetFileAttributesExW(fc.path.c_str(), GetFileExInfoStandard, &attr)) {
                             uint64_t mtime = (uint64_t(attr.ftLastWriteTime.dwHighDateTime) << 32) | attr.ftLastWriteTime.dwLowDateTime;
+                            std::lock_guard lk(scanCacheMx);
                             if (scanCache.count(fc.path) && scanCache[fc.path] == mtime) return;
                         }
                     }
@@ -177,8 +182,12 @@ int wmain(int argc, wchar_t** argv) {
                                 if (cfg.noCache) footerOff &= ~(uint64_t(sectorSize) - 1);
                                 LARGE_INTEGER off; off.QuadPart = (long long)footerOff; SetFilePointerEx(hFile, off, nullptr, FILE_BEGIN);
                                 DWORD fgot = 0; ReadFile(hFile, fbuf, (DWORD)pool.bufferSize(), &fgot, nullptr);
-                                task.lastChunk = false; workerQueues[qIdx]->push(std::move(task));
-                                WorkTask ftask; ftask.path = fc.path; ftask.fileRef = fc.fileRef; ftask.buffer = fbuf; ftask.bytesUsed = (size_t)std::min((uint64_t)fgot, fc.size - footerOff); ftask.lastChunk = true;
+                                task.lastChunk = false;
+                                std::wstring taskPath = task.path;
+                                uint64_t fileRef = task.fileRef;
+                                uint64_t totalSize = task.fc.size;
+                                workerQueues[qIdx]->push(std::move(task));
+                                WorkTask ftask; ftask.path = taskPath; ftask.fileRef = fileRef; ftask.buffer = fbuf; ftask.bytesUsed = (size_t)std::min((uint64_t)fgot, totalSize - footerOff); ftask.lastChunk = true;
                                 workerQueues[qIdx]->push(std::move(ftask));
                             } else { task.lastChunk = true; workerQueues[qIdx]->push(std::move(task)); }
                         } else {
@@ -229,7 +238,7 @@ int wmain(int argc, wchar_t** argv) {
                 }
                 if (task.lastChunk) {
                     FileContext& fc = state.fc;
-                    if (!fc.isPartial) { fc.hash = XXH3_128bits_digest(state.xxh); fc.crc = state.crc; fc.hashValid = true; }
+                    if (!fc.isPartial && state.total > 0) { fc.hash = XXH3_128bits_digest(state.xxh); fc.crc = state.crc; fc.hashValid = true; }
                     if (cfg.methods.count("entropy") && state.total > 0 && !fc.isPartial) {
                         double entropy = 0; for (uint64_t count : state.counts) { if (count > 0) { double p = (double)count / (double)state.total; entropy -= p * std::log2(p); } }
                         fc.entropy = entropy;
@@ -252,7 +261,7 @@ int wmain(int argc, wchar_t** argv) {
                         WIN32_FILE_ATTRIBUTE_DATA attr; if (GetFileAttributesExW(fc.path.c_str(), GetFileExInfoStandard, &attr)) {
                             uint64_t mtime = (uint64_t(attr.ftLastWriteTime.dwHighDateTime) << 32) | attr.ftLastWriteTime.dwLowDateTime;
                             if (cfg.writeManifest) { std::lock_guard lk(manifestMx); manifestCollected.push_back({fc.path, fc.size, mtime, fc.hash}); }
-                            if (!cfg.scanCachePath.empty() && fnd.worst == Verdict::Ok) { std::lock_guard lk(manifestMx); scanCache[fc.path] = mtime; }
+                            if (!cfg.scanCachePath.empty() && fnd.worst == Verdict::Ok) { std::lock_guard lk(scanCacheMx); scanCache[fc.path] = mtime; }
                         }
                     }
                     activeFiles.erase(task.path);
@@ -270,10 +279,11 @@ int wmain(int argc, wchar_t** argv) {
                 double gbps = (elapsed > 0) ? (double)totalBytesScanned.load() / (1024.0 * 1024.0 * 1024.0) / elapsed : 0;
                 std::wstring path; { std::lock_guard lk(currentPathMx); path = currentPath; }
                 if (path.size() > 40) path = L"..." + path.substr(path.size() - 37);
-                std::fwprintf(stderr, L"\rScanning... %llu files, %llu flagged, %.2f GB/s | %ls", scanned.load(), flagged.load(), gbps, path.c_str());
+                std::fwprintf(stderr, L"\rScanning... %llu files, %llu flagged, %.2f GB/s | %-45ls", scanned.load(), flagged.load(), gbps, path.c_str());
                 std::fflush(stderr); std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            std::fwprintf(stderr, L"\n");
+            std::fwprintf(stderr, L"\r                                                                                \r");
+            std::fflush(stderr);
         });
         producer.join(); for (auto& t : readers) t.join();
         if (!isSsd) for (auto& q : workerQueues) q->close();
@@ -289,7 +299,7 @@ int wmain(int argc, wchar_t** argv) {
 
     std::wcout << L"Done. Scanned " << scanned.load() << L" files, flagged " << flagged.load() << L".\n";
     if (cfg.writeManifest && !cfg.manifestPath.empty()) { std::vector<std::pair<std::wstring, dscan::ManifestEntry>> entries; for (auto& m : manifestCollected) entries.push_back({m.path, {m.size, m.mtime, m.hash}}); save_manifest(cfg.manifestPath, entries); }
-    if (!cfg.scanCachePath.empty()) { std::wofstream out(cfg.scanCachePath); for (auto const& [path, mtime] : scanCache) out << path << L"\t" << mtime << L"\n"; }
+    if (!cfg.scanCachePath.empty()) { std::wofstream out(cfg.scanCachePath); std::lock_guard lk(scanCacheMx); for (auto const& [path, mtime] : scanCache) out << path << L"\t" << mtime << L"\n"; }
     std::sort(findings.begin(), findings.end(), [](const Finding& a, const Finding& b) { return a.path < b.path; });
     if (!cfg.reportPath.empty()) write_report(findings, cfg);
     review_and_delete(findings, cfg);

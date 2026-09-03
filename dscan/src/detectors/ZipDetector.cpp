@@ -27,6 +27,9 @@ DetectionResult ZipDetector::check(const FileContext& f, const Config&) {
     }
 
     mz_uint num_files = mz_zip_reader_get_num_files(&zip);
+    bool hasSuspect = false;
+    std::string suspectReason;
+
     for (mz_uint i = 0; i < num_files; i++) {
         mz_zip_archive_file_stat stat;
         if (!mz_zip_reader_file_stat(&zip, i, &stat)) {
@@ -37,18 +40,20 @@ DetectionResult ZipDetector::check(const FileContext& f, const Config&) {
         // Skip directories for CRC check
         if (mz_zip_reader_is_file_a_directory(&zip, i)) continue;
 
-        // Skip encrypted files for CRC check (we can't verify them without a password)
-        if (mz_zip_reader_is_file_encrypted(&zip, i)) continue;
+        // Classify encrypted files as Suspect (contents cannot be verified)
+        if (mz_zip_reader_is_file_encrypted(&zip, i)) {
+            hasSuspect = true;
+            if (suspectReason.empty()) suspectReason = "encrypted entry: " + std::string(stat.m_filename);
+            continue;
+        }
 
-        // We could validate every entry, but that might be slow.
-        // miniz has mz_zip_reader_is_file_supported.
-        // For dscan, we want to be sure. Let's do a fast CRC check.
+        // Check for compression methods unsupported by miniz (e.g. BZIP2, LZMA, ZSTD)
+        if (stat.m_method != 0 && stat.m_method != MZ_DEFLATED) {
+            hasSuspect = true;
+            if (suspectReason.empty()) suspectReason = "unsupported compression method " + std::to_string(stat.m_method) + ": " + std::string(stat.m_filename);
+            continue;
+        }
 
-        // miniz 2.2.0 doesn't have mz_zip_reader_validate_file_data.
-        // We'll extract to a null sink or use extract_to_mem with a small buffer.
-        // For dscan, let's just extract to a dummy buffer and check if it succeeds.
-        // Since we want to be fast, we only do this for files.
-        std::vector<uint8_t> dummy(1024);
         mz_bool ok = mz_zip_reader_extract_to_callback(&zip, i, [](void* pOpaque, mz_uint64 ofs, const void* pBuf, size_t n) -> size_t {
             (void)pOpaque; (void)ofs; (void)pBuf;
             return n;
@@ -61,6 +66,7 @@ DetectionResult ZipDetector::check(const FileContext& f, const Config&) {
     }
 
     mz_zip_reader_end(&zip);
+    if (hasSuspect) return { Verdict::Suspect, suspectReason, "struct/zip" };
     return { Verdict::Ok, "all entries valid", "struct/zip" };
 }
 

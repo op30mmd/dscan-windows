@@ -22,20 +22,25 @@ DetectionResult Mp4Detector::check(const FileContext& f, const Config&) {
         char type[5] = { (char)p[off+4], (char)p[off+5], (char)p[off+6], (char)p[off+7], 0 };
 
         if (len == 1) { // 64-bit length
-            if (off + 16 > n) return { Verdict::Corrupt, "truncated 64-bit box", "struct/mp4" };
+            if (off + 16 > n) return { Verdict::Corrupt, "truncated 64-bit box header", "struct/mp4" };
             uint64_t largeLen = 0;
             for (int i = 0; i < 8; ++i) largeLen = (largeLen << 8) | p[off + 8 + i];
-            if (off + largeLen > n && largeLen != 0) return { Verdict::Corrupt, std::string("truncated 64-bit box: ") + type, "struct/mp4" };
             if (largeLen == 0) break; // extends to EOF
+            if (largeLen < 16 || off + largeLen < off || off + largeLen > n) {
+                return { Verdict::Corrupt, std::string("truncated/invalid 64-bit box: ") + type, "struct/mp4" };
+            }
+            if (std::strcmp(type, "ftyp") == 0) sawFtyp = true;
+            if (std::strcmp(type, "moov") == 0) sawMoov = true;
             off += largeLen;
             continue;
         }
         if (len == 0) break; // extends to EOF
+        if (len < 8) return { Verdict::Corrupt, std::string("invalid box header length: ") + type, "struct/mp4" };
 
         if (std::strcmp(type, "ftyp") == 0) sawFtyp = true;
         if (std::strcmp(type, "moov") == 0) sawMoov = true;
 
-        if (off + len > n) {
+        if (off + len < off || off + len > n) {
             // Last box might be mdat and truncated, common in failed downloads
             return { Verdict::Corrupt, std::string("truncated box: ") + type, "struct/mp4" };
         }

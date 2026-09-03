@@ -31,6 +31,7 @@ DetectionResult PdfDetector::check(const FileContext& f, const Config&) {
 
     // Find startxref
     bool sawStartXref = false;
+    bool validStartXref = false;
     for (uint64_t i = 0; i <= lookback - 9; i++) {
         if (std::memcmp(tail + i, "startxref", 9) == 0) {
             sawStartXref = true;
@@ -48,7 +49,7 @@ DetectionResult PdfDetector::check(const FileContext& f, const Config&) {
                     // Check if 'xref' or an object exists at that offset
                     const uint8_t* target = p + xrefOff;
                     if ((uint64_t)xrefOff + 4 <= n && (std::memcmp(target, "xref", 4) == 0 || (target[0] >= '0' && target[0] <= '9'))) {
-                        // Looks good enough
+                        validStartXref = true;
                     } else {
                         return { Verdict::Corrupt, "startxref points to invalid location", "struct/pdf" };
                     }
@@ -60,8 +61,8 @@ DetectionResult PdfDetector::check(const FileContext& f, const Config&) {
         }
     }
 
-    if (!sawStartXref)
-        return { Verdict::Corrupt, "missing startxref (corrupt trailer)", "struct/pdf" };
+    if (!sawStartXref || !validStartXref)
+        return { Verdict::Corrupt, "missing or invalid startxref (corrupt trailer)", "struct/pdf" };
 
     // Basic trailer check: should find 'trailer' or 'obj' before startxref
     bool sawTrailer = false;
